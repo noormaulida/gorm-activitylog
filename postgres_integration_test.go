@@ -171,6 +171,19 @@ CREATE TABLE activity_log (
 	if err := db.Exec("DROP TABLE activity_log CASCADE").Error; err != nil {
 		t.Fatal(err)
 	}
+	
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := sqlDB.Close(); err != nil {
+		t.Fatal(err)
+	}
+	db, err = gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	const createUUIDActivityLog = `
 CREATE TABLE activity_log (
     id BIGSERIAL PRIMARY KEY,
@@ -198,6 +211,9 @@ CREATE TABLE activity_log (
 		}
 	}
 	if err := db.AutoMigrate(&postgresUUIDDocument{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := Register(db); err != nil {
 		t.Fatal(err)
 	}
 
