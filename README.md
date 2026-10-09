@@ -329,6 +329,17 @@ cannot safely capture the value that existed before the update.
 go test -v ./...
 ```
 
+MySQL and PostgreSQL compatibility suites run when their DSNs are configured:
+
+```bash
+MYSQL_DSN='root:root@tcp(127.0.0.1:3306)/activitylog_test?parseTime=true' \
+POSTGRES_DSN='host=127.0.0.1 user=postgres password=postgres dbname=activitylog_test sslmode=disable' \
+go test -race ./...
+```
+
+They are skipped for normal local tests without those environment variables.
+CI runs both databases and enforces 100% statement coverage.
+
 ## License
 
 [MIT License](LICENSE)

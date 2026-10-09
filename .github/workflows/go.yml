@@ -27,6 +27,20 @@ jobs:
           --health-timeout=5s
           --health-retries=20
 
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: activitylog_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres -d activitylog_test"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -44,6 +58,7 @@ jobs:
         run: go test -race -coverprofile=coverage.out -covermode=atomic ./...
         env:
           MYSQL_DSN: root:root@tcp(127.0.0.1:3306)/activitylog_test?parseTime=true
+          POSTGRES_DSN: host=127.0.0.1 user=postgres password=postgres dbname=activitylog_test port=5432 sslmode=disable TimeZone=UTC
 
       - name: Enforce 100% coverage
         run: |
