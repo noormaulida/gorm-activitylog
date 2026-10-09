@@ -377,9 +377,235 @@ func TestDeleteLogsPreDeleteValues(t *testing.T) {
 	if logs[1].Event == nil || *logs[1].Event != "deleted" {
 		t.Fatalf("unexpected delete event: %v", logs[1].Event)
 	}
-	oldValues := properties(t, logs[1])["old"].(map[string]any)
-	if oldValues["name"] != "Deleted" {
-		t.Fatalf("unexpected old values: %#v", oldValues)
+	props := properties(t, logs[1])
+	oldValues := props["old"].(map[string]any)
+	newValues := props["attributes"].(map[string]any)
+	if oldValues["name"] != "Deleted" || newValues["name"] != "Deleted" {
+		t.Fatalf("unexpected soft-delete values: %#v", props)
+	}
+	if _, logged := oldValues["deleted_at"]; logged {
+		t.Fatal("ignored deleted_at must stay out of properties")
+	}
+}
+
+type softDocument struct {
+	ID        uint64
+	Title     string
+	DeletedAt gorm.DeletedAt
+}
+
+func (*softDocument) ActivityLogOptions() LogOptions {
+	return LogOptions{
+		SubjectType:      "documents",
+		LogOnlyDirty:     true,
+		IgnoreAttributes: []string{"updated_at"},
+	}
+}
+
+type hardRecord struct {
+	ID    uint64
+	Title string
+}
+
+func (*hardRecord) ActivityLogOptions() LogOptions {
+	return LogOptions{SubjectType: "records"}
+}
+
+type noRestoreDocument struct {
+	ID        uint64
+	Title     string
+	DeletedAt gorm.DeletedAt
+}
+
+func (*noRestoreDocument) ActivityLogOptions() LogOptions {
+	return LogOptions{
+		LogEvents:        []string{EventUpdated, EventDeleted},
+		LogOnlyDirty:     true,
+		IgnoreAttributes: []string{"updated_at"},
+		SubjectType:      "articles",
+	}
+}
+
+func TestSoftDeleteRestoreAndHardDelete(t *testing.T) {
+	db := openTestDB(t)
+	if err := db.AutoMigrate(&softDocument{}, &hardRecord{}); err != nil {
+		t.Fatal(err)
+	}
+
+	doc := softDocument{Title: "Draft"}
+	if err := db.Create(&doc).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&doc).Updates(softDocument{Title: "Published"}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Delete(&doc).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	var persisted softDocument
+	if err := db.Unscoped().First(&persisted, doc.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if !persisted.DeletedAt.Valid {
+		t.Fatal("expected soft delete")
+	}
+	persisted.Title = "Edited while deleted"
+	if err := db.Unscoped().Save(&persisted).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Unscoped().Model(&persisted).Update("deleted_at", nil).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Unscoped().Delete(&persisted).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	byUpdate := softDocument{Title: "Column delete"}
+	if err := db.Create(&byUpdate).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&byUpdate).Update("deleted_at", time.Now().UTC()).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	record := hardRecord{Title: "Gone"}
+	if err := db.Create(&record).Error; err != nil {
+		t.Fatal(err)
+	}
+	record.Title = "Changed"
+	if err := db.Save(&record).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Delete(&record).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	logs := activities(t, db)
+	docs := make([]Activity, 0)
+	for _, log := range logs {
+		if log.SubjectType != nil && *log.SubjectType == "documents" && numericMorphID(t, log.SubjectID) == doc.ID {
+			docs = append(docs, log)
+		}
+	}
+	want := []string{EventCreated, EventUpdated, EventDeleted, EventUpdated, EventRestored, EventDeleted}
+	if len(docs) != len(want) {
+		t.Fatalf("expected %d document activities, got %d", len(want), len(docs))
+	}
+	for i, event := range want {
+		if docs[i].Event == nil || *docs[i].Event != event {
+			t.Fatalf("document activity %d: got %v, want %s", i, docs[i].Event, event)
+		}
+	}
+
+	softProps := properties(t, docs[2])
+	if softProps["old"].(map[string]any)["deleted_at"] != nil {
+		t.Fatalf("soft delete old deleted_at = %#v", softProps["old"])
+	}
+	if softProps["attributes"].(map[string]any)["deleted_at"] == nil {
+		t.Fatalf("soft delete attributes = %#v", softProps["attributes"])
+	}
+	edited := properties(t, docs[3])
+	if edited["attributes"].(map[string]any)["title"] != "Edited while deleted" {
+		t.Fatalf("unscoped update = %#v", edited)
+	}
+	if _, ok := edited["attributes"].(map[string]any)["deleted_at"]; ok {
+		t.Fatal("unscoped title update must stay an updated event")
+	}
+	restored := properties(t, docs[4])
+	if restored["old"].(map[string]any)["deleted_at"] == nil || restored["attributes"].(map[string]any)["deleted_at"] != nil {
+		t.Fatalf("restore properties = %#v", restored)
+	}
+	hardOnSoft := properties(t, docs[5])
+	if _, ok := hardOnSoft["attributes"]; ok {
+		t.Fatalf("hard delete must omit attributes: %#v", hardOnSoft)
+	}
+	if hardOnSoft["old"].(map[string]any)["title"] != "Edited while deleted" {
+		t.Fatalf("hard delete old = %#v", hardOnSoft["old"])
+	}
+
+	var columnDelete Activity
+	for _, log := range logs {
+		if log.SubjectType != nil && *log.SubjectType == "documents" && numericMorphID(t, log.SubjectID) == byUpdate.ID && log.Event != nil && *log.Event == EventDeleted {
+			columnDelete = log
+		}
+	}
+	if columnDelete.ID == 0 {
+		t.Fatal("updating deleted_at must log deleted")
+	}
+
+	var hard Activity
+	for _, log := range logs {
+		if log.SubjectType != nil && *log.SubjectType == "records" && log.Event != nil && *log.Event == EventDeleted {
+			hard = log
+		}
+	}
+	hardProps := properties(t, hard)
+	if _, ok := hardProps["attributes"]; ok || hardProps["old"].(map[string]any)["title"] != "Changed" {
+		t.Fatalf("hard record delete = %#v", hardProps)
+	}
+}
+
+func TestRestoreCanBeDisabled(t *testing.T) {
+	db := openTestDB(t)
+	if err := db.AutoMigrate(&noRestoreDocument{}); err != nil {
+		t.Fatal(err)
+	}
+
+	doc := noRestoreDocument{Title: "Draft"}
+	if err := db.Create(&doc).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Delete(&doc).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Unscoped().Model(&doc).Update("deleted_at", nil).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	logs := activities(t, db)
+	if len(logs) != 1 || logs[0].Event == nil || *logs[0].Event != EventDeleted {
+		t.Fatalf("expected only deleted, got %#v", logs)
+	}
+}
+
+func TestUnsupportedUpdatesDoNotLogOrFail(t *testing.T) {
+	db := openTestDB(t)
+	if err := db.AutoMigrate(&softDocument{}); err != nil {
+		t.Fatal(err)
+	}
+
+	doc := softDocument{Title: "Before"}
+	if err := db.Create(&doc).Error; err != nil {
+		t.Fatal(err)
+	}
+	before := len(activities(t, db))
+
+	if err := db.Model(&softDocument{}).Where("id = ?", doc.ID).Update("title", "Where").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&softDocument{}).Where("id = ?", doc.ID).Updates(map[string]any{
+		"title": "Map",
+		"id":    doc.ID,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&doc).UpdateColumn("title", "Column").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Table("soft_documents").Where("id = ?", doc.ID).Update("title", "Table").Error; err != nil {
+		t.Fatal(err)
+	}
+
+	if count := len(activities(t, db)); count != before {
+		t.Fatalf("unsupported updates wrote activities: got %d, want %d", count, before)
+	}
+	var persisted softDocument
+	if err := db.First(&persisted, doc.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if persisted.Title != "Table" {
+		t.Fatalf("expected unsupported updates to persist, got %q", persisted.Title)
 	}
 }
 

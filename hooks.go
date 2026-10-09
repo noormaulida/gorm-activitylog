@@ -13,6 +13,7 @@ var ErrMissingOldState = errors.New("activitylog: old model state was not captur
 const (
 	oldDataKey    = "activitylog:old_data"
 	deleteDataKey = "activitylog:delete_data"
+	skipUpdateKey = "activitylog:skip_update"
 )
 
 // GORMPlugin installs activity logging callbacks.
@@ -107,7 +108,7 @@ func afterCreateHook(tx *gorm.DB) {
 }
 
 func beforeUpdateHook(tx *gorm.DB) {
-	if tx.Error != nil {
+	if tx.Error != nil || (tx.Statement != nil && tx.Statement.SkipHooks) {
 		return
 	}
 
@@ -115,7 +116,7 @@ func beforeUpdateHook(tx *gorm.DB) {
 	if !ok {
 		return
 	}
-	if !shouldLogEvent(loggable.ActivityLogOptions(), EventUpdated) {
+	if !mutationLoggingEnabled(loggable.ActivityLogOptions()) {
 		return
 	}
 
@@ -123,9 +124,9 @@ func beforeUpdateHook(tx *gorm.DB) {
 	if !ok || modelValue.Kind() != reflect.Struct {
 		return
 	}
-
 	primaryField, key, ok := primaryKey(tx, modelValue)
-	if !ok {
+	if !ok || !instanceDestAuditable(tx) {
+		tx.InstanceSet(skipUpdateKey, true)
 		return
 	}
 
@@ -143,7 +144,7 @@ func beforeUpdateHook(tx *gorm.DB) {
 }
 
 func afterUpdateHook(tx *gorm.DB) {
-	if tx.Error != nil || tx.RowsAffected == 0 {
+	if tx.Error != nil || tx.RowsAffected == 0 || (tx.Statement != nil && tx.Statement.SkipHooks) {
 		return
 	}
 
@@ -152,8 +153,12 @@ func afterUpdateHook(tx *gorm.DB) {
 		return
 	}
 
+	if _, skip := tx.InstanceGet(skipUpdateKey); skip {
+		return
+	}
+
 	opts := loggable.ActivityLogOptions()
-	if !shouldLogEvent(opts, EventUpdated) {
+	if !mutationLoggingEnabled(opts) {
 		return
 	}
 	oldData, exists := tx.InstanceGet(oldDataKey)
@@ -181,20 +186,16 @@ func afterUpdateHook(tx *gorm.DB) {
 		return
 	}
 	newAttrs := extractAttributes(tx, reflect.ValueOf(newData), opts)
-
-	if opts.LogOnlyDirty {
-		oldAttrs, newAttrs = dirtyAttributes(oldAttrs, newAttrs)
-		if len(newAttrs) == 0 {
-			return
-		}
+	event := changeEvent(tx, oldValue, reflect.ValueOf(newData))
+	if !shouldLogEvent(opts, event) {
+		return
+	}
+	props, ok := loggedChange(opts, event, oldAttrs, newAttrs, deletedAtColumn(tx))
+	if !ok {
+		return
 	}
 
-	props := ActivityProperties{
-		Attributes: newAttrs,
-		Old:        oldAttrs,
-	}
-
-	saveActivity(tx, loggable, EventUpdated, opts, props)
+	saveActivity(tx, loggable, event, opts, props)
 }
 
 func beforeDeleteHook(tx *gorm.DB) {
@@ -239,5 +240,119 @@ func afterDeleteHook(tx *gorm.DB) {
 	if !shouldLogEvent(opts, EventDeleted) {
 		return
 	}
-	saveActivity(tx, loggable, EventDeleted, opts, props)
+	if !softDelete(tx) {
+		saveActivity(tx, loggable, EventDeleted, opts, props)
+		return
+	}
+
+	modelValue, ok := indirectValue(reflect.ValueOf(loggable))
+	if !ok || modelValue.Kind() != reflect.Struct {
+		return
+	}
+	fresh, err := reloadModel(tx, modelValue)
+	if err != nil {
+		tx.AddError(err)
+		return
+	}
+	newAttrs := extractAttributes(tx, fresh, opts)
+	changed, _ := loggedChange(opts, EventDeleted, props.Old, newAttrs, deletedAtColumn(tx))
+	saveActivity(tx, loggable, EventDeleted, opts, changed)
+}
+
+func mutationLoggingEnabled(opts LogOptions) bool {
+	return shouldLogEvent(opts, EventUpdated) ||
+		shouldLogEvent(opts, EventDeleted) ||
+		shouldLogEvent(opts, EventRestored)
+}
+
+func instanceDestAuditable(tx *gorm.DB) bool {
+	dest, ok := indirectValue(reflect.ValueOf(tx.Statement.Dest))
+	if !ok {
+		return false
+	}
+	if dest.Kind() == reflect.Map {
+		return dest.Len() == 1
+	}
+	return dest.Kind() == reflect.Struct
+}
+
+func hasDeletedAt(tx *gorm.DB) bool {
+	return tx.Statement != nil && tx.Statement.Schema != nil &&
+		tx.Statement.Schema.LookUpField("DeletedAt") != nil
+}
+
+func deletedAtColumn(tx *gorm.DB) string {
+	if !hasDeletedAt(tx) {
+		return ""
+	}
+	return tx.Statement.Schema.LookUpField("DeletedAt").DBName
+}
+
+func deletedAtSet(tx *gorm.DB, value reflect.Value) bool {
+	if !hasDeletedAt(tx) {
+		return false
+	}
+	value, ok := indirectValue(value)
+	if !ok || value.Kind() != reflect.Struct {
+		return false
+	}
+	_, zero := tx.Statement.Schema.LookUpField("DeletedAt").ValueOf(tx.Statement.Context, value)
+	return !zero
+}
+
+func softDelete(tx *gorm.DB) bool {
+	return hasDeletedAt(tx) && !tx.Statement.Unscoped
+}
+
+func changeEvent(tx *gorm.DB, oldValue, newValue reflect.Value) string {
+	if !hasDeletedAt(tx) {
+		return EventUpdated
+	}
+	oldSet := deletedAtSet(tx, oldValue)
+	newSet := deletedAtSet(tx, newValue)
+	switch {
+	case !oldSet && newSet:
+		return EventDeleted
+	case oldSet && !newSet:
+		return EventRestored
+	default:
+		return EventUpdated
+	}
+}
+
+func reloadModel(tx *gorm.DB, modelValue reflect.Value) (reflect.Value, error) {
+	primaryField, key, ok := primaryKey(tx, modelValue)
+	if !ok {
+		return reflect.Value{}, ErrMissingOldState
+	}
+	fresh := reflect.New(modelValue.Type()).Interface()
+	err := tx.Session(&gorm.Session{NewDB: true, SkipHooks: true}).
+		Unscoped().
+		Where(primaryField.DBName+" = ?", key).
+		Take(fresh).Error
+	if err != nil {
+		return reflect.Value{}, err
+	}
+	return reflect.ValueOf(fresh), nil
+}
+
+func loggedChange(opts LogOptions, event string, oldAttrs, newAttrs map[string]any, deletedAtColumn string) (ActivityProperties, bool) {
+	if opts.LogOnlyDirty {
+		fullOld, fullNew := oldAttrs, newAttrs
+		oldAttrs, newAttrs = dirtyAttributes(oldAttrs, newAttrs)
+		if deletedAtColumn != "" && (event == EventDeleted || event == EventRestored) {
+			if _, ok := fullNew[deletedAtColumn]; ok {
+				oldAttrs[deletedAtColumn] = fullOld[deletedAtColumn]
+				newAttrs[deletedAtColumn] = fullNew[deletedAtColumn]
+			}
+		}
+		if len(newAttrs) == 0 {
+			if event == EventUpdated {
+				return ActivityProperties{}, false
+			}
+			oldAttrs, newAttrs = fullOld, fullNew
+		}
+	}
+
+	return ActivityProperties{Attributes: newAttrs, Old: oldAttrs}, true
 }
