@@ -161,6 +161,32 @@ err := activitylog.New(db).
 
 Use `PerformedOn(&article)` to attach a model subject. It reads the primary key and uses `SubjectType` from the model's `LogOptions`.
 
+## Batch logging
+
+Group multiple automatic activities by carrying one UUID in their context:
+
+```go
+ctx := activitylog.WithBatch(
+    request.Context(),
+    "018f8f4e-735b-7c44-89b2-3f2fcf0d97a1",
+)
+
+tx := db.WithContext(ctx)
+tx.Create(&article)
+tx.Create(&comment)
+```
+
+The fluent logger supports the same column:
+
+```go
+activitylog.New(db).
+    InBatch(batchUUID).
+    Log("Import completed")
+```
+
+The package accepts UUID strings without generating or validating them, so the
+application remains responsible for choosing its UUID version and generator.
+
 ## Transaction behavior
 
 Automatic activities are inserted through the same database transaction as the model operation. Rolling back the model change also rolls back its activity. Failure to serialize or insert an activity is returned as a GORM operation

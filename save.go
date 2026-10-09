@@ -26,10 +26,14 @@ func saveActivity(tx *gorm.DB, loggable Loggable, event string, logName string, 
 	subjectTypeValue := subjectType(loggable, options, tx.Statement.Schema)
 	var causerID *uint64
 	var causerType *string
+	var batchUUID *string
 
 	if id, modelType, exists := causerFromContext(tx.Statement.Context); exists {
 		causerID = &id
 		causerType = &modelType
+	}
+	if value, exists := batchFromContext(tx.Statement.Context); exists {
+		batchUUID = &value
 	}
 
 	propsJSON, err := json.Marshal(props)
@@ -46,6 +50,7 @@ func saveActivity(tx *gorm.DB, loggable Loggable, event string, logName string, 
 		SubjectType: &subjectTypeValue,
 		CauserID:    causerID,
 		CauserType:  causerType,
+		BatchUUID:   batchUUID,
 		Properties:  datatypes.JSON(propsJSON),
 	}
 

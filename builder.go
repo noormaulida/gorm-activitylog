@@ -18,6 +18,7 @@ type ActivityLogger struct {
 	causerType  *string
 	subjectID   *uint64
 	subjectType *string
+	batchUUID   *string
 	properties  map[string]any
 	err         error
 }
@@ -50,6 +51,16 @@ func (l *ActivityLogger) Event(event string) *ActivityLogger {
 func (l *ActivityLogger) CausedBy(id uint64, causerType string) *ActivityLogger {
 	l.causerID = &id
 	l.causerType = &causerType
+	return l
+}
+
+// InBatch groups this activity under the supplied batch UUID.
+func (l *ActivityLogger) InBatch(batchUUID string) *ActivityLogger {
+	if batchUUID == "" {
+		l.batchUUID = nil
+	} else {
+		l.batchUUID = &batchUUID
+	}
 	return l
 }
 
@@ -125,12 +136,18 @@ func (l *ActivityLogger) Log(description string) error {
 		CauserType:  l.causerType,
 		SubjectID:   l.subjectID,
 		SubjectType: l.subjectType,
+		BatchUUID:   l.batchUUID,
 	}
 
 	if activity.CauserID == nil {
 		if id, modelType, ok := causerFromContext(l.db.Statement.Context); ok {
 			activity.CauserID = &id
 			activity.CauserType = &modelType
+		}
+	}
+	if activity.BatchUUID == nil {
+		if batchUUID, ok := batchFromContext(l.db.Statement.Context); ok {
+			activity.BatchUUID = &batchUUID
 		}
 	}
 

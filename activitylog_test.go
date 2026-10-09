@@ -212,6 +212,7 @@ func TestManualLoggerStoresArbitraryProperties(t *testing.T) {
 		UseLog("auth").
 		Event("login").
 		CausedBy(7, "App\\Models\\User").
+		InBatch("018f8f4e-735b-7c44-89b2-3f2fcf0d97a1").
 		PerformedOn(&user).
 		WithProperties(map[string]any{"ip_address": "127.0.0.1"}).
 		Log("User logged in")
@@ -227,6 +228,34 @@ func TestManualLoggerStoresArbitraryProperties(t *testing.T) {
 	}
 	if _, nested := props["attributes"]; nested {
 		t.Fatalf("manual properties must not be nested: %#v", props)
+	}
+	if manual.BatchUUID == nil || *manual.BatchUUID != "018f8f4e-735b-7c44-89b2-3f2fcf0d97a1" {
+		t.Fatalf("unexpected batch UUID: %v", manual.BatchUUID)
+	}
+}
+
+func TestBatchContextGroupsAutomaticActivities(t *testing.T) {
+	db := openTestDB(t)
+	const batchUUID = "018f8f4e-735b-7c44-89b2-3f2fcf0d97a1"
+	ctx := WithBatch(context.Background(), batchUUID)
+
+	user := testUser{Name: "Before"}
+	if err := db.WithContext(ctx).Create(&user).Error; err != nil {
+		t.Fatal(err)
+	}
+	user.Name = "After"
+	if err := db.WithContext(ctx).Save(&user).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	logs := activities(t, db)
+	if len(logs) != 2 {
+		t.Fatalf("expected 2 activities, got %d", len(logs))
+	}
+	for _, log := range logs {
+		if log.BatchUUID == nil || *log.BatchUUID != batchUUID {
+			t.Fatalf("unexpected batch UUID: %v", log.BatchUUID)
+		}
 	}
 }
 

@@ -54,7 +54,10 @@ type LogOptions struct {
 
 type contextKey uint8
 
-const causerContextKey contextKey = iota
+const (
+	causerContextKey contextKey = iota
+	batchContextKey
+)
 
 type causerContextValue struct {
 	id        uint64
@@ -80,6 +83,20 @@ func causerFromContext(ctx context.Context) (uint64, string, bool) {
 	}
 
 	return value.id, value.modelType, true
+}
+
+// WithBatch returns a context that groups automatic activities under one UUID.
+func WithBatch(ctx context.Context, batchUUID string) context.Context {
+	return context.WithValue(ctx, batchContextKey, batchUUID)
+}
+
+func batchFromContext(ctx context.Context) (string, bool) {
+	if ctx == nil {
+		return "", false
+	}
+
+	value, ok := ctx.Value(batchContextKey).(string)
+	return value, ok && value != ""
 }
 
 // Migrate creates or updates the activity_log table.
