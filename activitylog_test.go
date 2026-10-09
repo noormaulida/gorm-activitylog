@@ -10,6 +10,7 @@ import (
 
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 )
 
 type testUser struct {
@@ -244,6 +245,34 @@ func TestTransactionRollbackRemovesActivity(t *testing.T) {
 
 	if count := len(activities(t, db)); count != 0 {
 		t.Fatalf("expected no activities after rollback, got %d", count)
+	}
+}
+
+func TestActivityInsertFailureRollsBackModel(t *testing.T) {
+	dsn := fmt.Sprintf("file:%s?mode=memory&cache=shared", t.Name())
+	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{
+		Logger: logger.Default.LogMode(logger.Silent),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&testUser{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := Register(db); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := db.Create(&testUser{Name: "Must roll back"}).Error; err == nil {
+		t.Fatal("expected create to fail because activity_log does not exist")
+	}
+
+	var count int64
+	if err := db.Unscoped().Model(&testUser{}).Count(&count).Error; err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 {
+		t.Fatalf("expected model insert to roll back, found %d rows", count)
 	}
 }
 

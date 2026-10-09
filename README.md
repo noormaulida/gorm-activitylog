@@ -103,7 +103,46 @@ if err := db.WithContext(ctx).Create(&article).Error; err != nil {
 }
 ```
 
-The same pattern works from Gin, Fiber, Echo, or any other framework: create a context in authentication middleware and ensure the request handler uses `db.WithContext(ctx)`.
+Gin middleware can attach the causer to the request context:
+
+```go
+func ActivityContext() gin.HandlerFunc {
+    return func(c *gin.Context) {
+        userID := c.GetUint64("user_id")
+        ctx := activitylog.WithCauser(
+            c.Request.Context(),
+            userID,
+            "App\\Models\\User",
+        )
+        c.Request = c.Request.WithContext(ctx)
+        c.Next()
+    }
+}
+
+// In a handler:
+db.WithContext(c.Request.Context()).Create(&article)
+```
+
+Fiber v2 provides `UserContext` for the same purpose:
+
+```go
+func ActivityContext(c *fiber.Ctx) error {
+    if userID, ok := c.Locals("user_id").(uint64); ok {
+        ctx := activitylog.WithCauser(
+            c.UserContext(),
+            userID,
+            "App\\Models\\User",
+        )
+        c.SetUserContext(ctx)
+    }
+    return c.Next()
+}
+
+// In a handler:
+db.WithContext(c.UserContext()).Create(&article)
+```
+
+Apply this middleware after authentication so `user_id` is already available.
 
 ## Manual logging
 

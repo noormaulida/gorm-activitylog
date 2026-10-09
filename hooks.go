@@ -21,7 +21,9 @@ func (GORMPlugin) Name() string {
 
 // Initialize implements gorm.Plugin.
 func (GORMPlugin) Initialize(db *gorm.DB) error {
-	if err := db.Callback().Create().After("gorm:after_create").
+	if err := db.Callback().Create().
+		After("gorm:after_create").
+		Before("gorm:commit_or_rollback_transaction").
 		Register("activitylog:after_create", afterCreateHook); err != nil {
 		return err
 	}
@@ -29,7 +31,9 @@ func (GORMPlugin) Initialize(db *gorm.DB) error {
 		Register("activitylog:before_update", beforeUpdateHook); err != nil {
 		return err
 	}
-	if err := db.Callback().Update().After("gorm:after_update").
+	if err := db.Callback().Update().
+		After("gorm:after_update").
+		Before("gorm:commit_or_rollback_transaction").
 		Register("activitylog:after_update", afterUpdateHook); err != nil {
 		return err
 	}
@@ -37,7 +41,9 @@ func (GORMPlugin) Initialize(db *gorm.DB) error {
 		Register("activitylog:before_delete", beforeDeleteHook); err != nil {
 		return err
 	}
-	return db.Callback().Delete().After("gorm:after_delete").
+	return db.Callback().Delete().
+		After("gorm:after_delete").
+		Before("gorm:commit_or_rollback_transaction").
 		Register("activitylog:after_delete", afterDeleteHook)
 }
 
