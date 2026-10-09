@@ -381,15 +381,7 @@ POSTGRES_DSN='host=127.0.0.1 user=postgres password=postgres dbname=activitylog_
 go test -race ./...
 ```
 
-They are skipped for normal local tests without those environment variables.
-CI runs both databases and enforces 100% statement coverage. A separate job runs the Spatie 4.10.2 round trip:
-
-```bash
-cd compat/laravel && composer install
-# after the Spatie migrations have created activity_log and spatie_articles
-MYSQL_DSN='root:root@tcp(127.0.0.1:3306)/activitylog_spatie?parseTime=true' \
-  go test -tags spatie -count=1 -run 'TestGoWritesSpatieRows|TestGoReadsSpatieRows'
-```
+CI runs both databases, enforces 100% statement coverage, and runs the Spatie 4.10.2 round trip.
 
 ## License
 
