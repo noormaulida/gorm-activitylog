@@ -8,7 +8,8 @@ import (
 	"gorm.io/gorm"
 )
 
-func saveActivity(tx *gorm.DB, loggable Loggable, event string, logName string, props ActivityProperties) {
+func saveActivity(tx *gorm.DB, loggable Loggable, event string, options LogOptions, props ActivityProperties) {
+	logName := options.LogName
 	if logName == "" {
 		logName = "default"
 	}
@@ -23,7 +24,6 @@ func saveActivity(tx *gorm.DB, loggable Loggable, event string, logName string, 
 		return
 	}
 
-	options := loggable.ActivityLogOptions()
 	subjectTypeValue := subjectType(loggable, options, tx.Statement.Schema)
 	var causerID *MorphID
 	var causerType *string
@@ -48,7 +48,7 @@ func saveActivity(tx *gorm.DB, loggable Loggable, event string, logName string, 
 
 	activity := Activity{
 		LogName:     &logName,
-		Description: event,
+		Description: eventDescription(options, event),
 		Event:       &event,
 		SubjectID:   &subjectID,
 		SubjectType: &subjectTypeValue,

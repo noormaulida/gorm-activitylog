@@ -45,11 +45,13 @@ type Loggable interface {
 // Attribute names may be Go field names or database column names. SubjectType
 // should be set to the Laravel morph class or alias when sharing a database.
 type LogOptions struct {
-	LogName          string
-	SubjectType      string
-	LogAttributes    []string
-	IgnoreAttributes []string
-	LogOnlyDirty     bool
+	LogName             string
+	SubjectType         string
+	LogAttributes       []string
+	IgnoreAttributes    []string
+	LogEvents           []string
+	LogOnlyDirty        bool
+	DescriptionForEvent func(event string) string
 }
 
 type contextKey uint8

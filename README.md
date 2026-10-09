@@ -87,6 +87,32 @@ db.Delete(&article)
 
 Set `SubjectType` to the Laravel morph class or morph-map alias when sharing a database. If omitted, the GORM table name is used.
 
+### Event controls and descriptions
+
+By default, all three lifecycle events are logged. Use `LogEvents` to select a
+subset and `DescriptionForEvent` to customize the human-readable description:
+
+```go
+func (*Article) ActivityLogOptions() activitylog.LogOptions {
+    return activitylog.LogOptions{
+        LogEvents: []string{
+            activitylog.EventUpdated,
+            activitylog.EventDeleted,
+        },
+        DescriptionForEvent: func(event string) string {
+            if event == activitylog.EventUpdated {
+                return "Article was published"
+            }
+            return event
+        },
+    }
+}
+```
+
+This configuration does not log `created`. The `event` column remains
+`updated`, while the `description` column contains `Article was published`.
+An empty `LogEvents` list preserves the default of logging every event.
+
 ## Causer from request context
 
 Put the authenticated user into a standard Go context and pass that context to GORM:

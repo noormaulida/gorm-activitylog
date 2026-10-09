@@ -87,11 +87,14 @@ func afterCreateHook(tx *gorm.DB) {
 	}
 
 	opts := loggable.ActivityLogOptions()
+	if !shouldLogEvent(opts, EventCreated) {
+		return
+	}
 	props := ActivityProperties{
 		Attributes: extractAttributes(tx, reflect.ValueOf(loggable), opts),
 	}
 
-	saveActivity(tx, loggable, "created", opts.LogName, props)
+	saveActivity(tx, loggable, EventCreated, opts, props)
 }
 
 func beforeUpdateHook(tx *gorm.DB) {
@@ -101,6 +104,9 @@ func beforeUpdateHook(tx *gorm.DB) {
 
 	loggable, ok := statementLoggable(tx)
 	if !ok {
+		return
+	}
+	if !shouldLogEvent(loggable.ActivityLogOptions(), EventUpdated) {
 		return
 	}
 
@@ -143,6 +149,9 @@ func afterUpdateHook(tx *gorm.DB) {
 	}
 
 	opts := loggable.ActivityLogOptions()
+	if !shouldLogEvent(opts, EventUpdated) {
+		return
+	}
 	oldAttrs := extractAttributes(tx, reflect.ValueOf(oldData), opts)
 	oldValue, ok := indirectValue(reflect.ValueOf(oldData))
 	if !ok || oldValue.Kind() != reflect.Struct {
@@ -175,7 +184,7 @@ func afterUpdateHook(tx *gorm.DB) {
 		Old:        oldAttrs,
 	}
 
-	saveActivity(tx, loggable, "updated", opts.LogName, props)
+	saveActivity(tx, loggable, EventUpdated, opts, props)
 }
 
 func beforeDeleteHook(tx *gorm.DB) {
@@ -189,6 +198,9 @@ func beforeDeleteHook(tx *gorm.DB) {
 	}
 
 	opts := loggable.ActivityLogOptions()
+	if !shouldLogEvent(opts, EventDeleted) {
+		return
+	}
 	tx.InstanceSet(deleteDataKey, ActivityProperties{
 		Old: extractAttributes(tx, reflect.ValueOf(loggable), opts),
 	})
@@ -214,5 +226,8 @@ func afterDeleteHook(tx *gorm.DB) {
 		return
 	}
 	opts := loggable.ActivityLogOptions()
-	saveActivity(tx, loggable, "deleted", opts.LogName, props)
+	if !shouldLogEvent(opts, EventDeleted) {
+		return
+	}
+	saveActivity(tx, loggable, EventDeleted, opts, props)
 }

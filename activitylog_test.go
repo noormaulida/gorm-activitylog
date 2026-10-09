@@ -35,6 +35,26 @@ func (*uuidDocument) ActivityLogOptions() LogOptions {
 	}
 }
 
+type eventArticle struct {
+	ID        uint64
+	Title     string
+	DeletedAt gorm.DeletedAt
+}
+
+func (*eventArticle) ActivityLogOptions() LogOptions {
+	return LogOptions{
+		LogEvents:    []string{EventUpdated, EventDeleted},
+		LogOnlyDirty: true,
+		SubjectType:  "App\\Models\\Article",
+		DescriptionForEvent: func(event string) string {
+			if event == EventUpdated {
+				return "Article was published"
+			}
+			return event
+		},
+	}
+}
+
 func (*testUser) ActivityLogOptions() LogOptions {
 	return LogOptions{
 		LogName:          "users",
@@ -160,6 +180,46 @@ func TestUUIDSubjectAndCauser(t *testing.T) {
 	}
 	if logs[0].CauserID == nil || logs[0].CauserID.String() != causerID {
 		t.Fatalf("unexpected UUID causer: %v", logs[0].CauserID)
+	}
+}
+
+func TestEventControlsAndCustomDescription(t *testing.T) {
+	db := openTestDB(t)
+	if err := db.AutoMigrate(&eventArticle{}); err != nil {
+		t.Fatal(err)
+	}
+
+	article := eventArticle{Title: "Draft"}
+	if err := db.Create(&article).Error; err != nil {
+		t.Fatal(err)
+	}
+	if count := len(activities(t, db)); count != 0 {
+		t.Fatalf("created event should be disabled, got %d activities", count)
+	}
+
+	article.Title = "Published"
+	if err := db.Save(&article).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Delete(&article).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	logs := activities(t, db)
+	if len(logs) != 2 {
+		t.Fatalf("expected updated and deleted activities, got %d", len(logs))
+	}
+	if logs[0].Event == nil || *logs[0].Event != EventUpdated {
+		t.Fatalf("unexpected update event: %v", logs[0].Event)
+	}
+	if logs[0].Description != "Article was published" {
+		t.Fatalf("unexpected custom description: %q", logs[0].Description)
+	}
+	if logs[1].Event == nil || *logs[1].Event != EventDeleted {
+		t.Fatalf("unexpected delete event: %v", logs[1].Event)
+	}
+	if logs[1].Description != EventDeleted {
+		t.Fatalf("unexpected default description: %q", logs[1].Description)
 	}
 }
 
