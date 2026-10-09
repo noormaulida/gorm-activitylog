@@ -7,7 +7,7 @@
 </p>
 
 <p align="center">
-  Automatic and manual activity logging for GORM, with a `activity_log` schema compatible with Spatie Laravel Activitylog.
+  Automatic and manual activity logging for GORM, with an activity_log schema compatible with Spatie Laravel Activitylog.
 </p>
 
 <p align="center">
@@ -20,7 +20,7 @@
   <a href="https://pkg.go.dev/github.com/noormaulida/gorm-activitylog">
     <img src="https://pkg.go.dev/badge/github.com/noormaulida/gorm-activitylog.svg" alt="Go Reference" />
   </a>
-  <a href="https://github.com/noormaulida/gorm-activitylog/blob/main/LICENSE">
+  <a href="https://github.com/noormaulida/gorm-activitylog/blob/master/LICENSE">
     <img src="https://img.shields.io/github/license/noormaulida/gorm-activitylog" alt="License" />
   </a>
 </p>
