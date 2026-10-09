@@ -492,6 +492,60 @@ func TestActivityQueryFiltersAndOrdering(t *testing.T) {
 	}
 }
 
+func TestPruneBeforeDeletesOnlyExpiredActivities(t *testing.T) {
+	db := openTestDB(t)
+	now := time.Now().UTC().Truncate(time.Second)
+	cutoff := now.Add(-24 * time.Hour)
+	seed := []Activity{
+		{Description: "expired", CreatedAt: now.Add(-48 * time.Hour), UpdatedAt: now.Add(-48 * time.Hour)},
+		{Description: "boundary", CreatedAt: cutoff, UpdatedAt: cutoff},
+		{Description: "recent", CreatedAt: now, UpdatedAt: now},
+	}
+	if err := db.Create(&seed).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	deleted, err := PruneBefore(db, cutoff)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if deleted != 1 {
+		t.Fatalf("expected 1 pruned activity, got %d", deleted)
+	}
+
+	remaining := activities(t, db)
+	if len(remaining) != 2 {
+		t.Fatalf("expected 2 remaining activities, got %d", len(remaining))
+	}
+	if remaining[0].Description != "boundary" || remaining[1].Description != "recent" {
+		t.Fatalf("unexpected remaining activities: %#v", remaining)
+	}
+}
+
+func TestPruneUsesRetentionDuration(t *testing.T) {
+	db := openTestDB(t)
+	old := Activity{
+		Description: "expired",
+		CreatedAt:   time.Now().Add(-72 * time.Hour),
+		UpdatedAt:   time.Now().Add(-72 * time.Hour),
+	}
+	recent := Activity{Description: "recent"}
+	if err := db.Create(&[]Activity{old, recent}).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	deleted, err := Prune(db, 24*time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if deleted != 1 {
+		t.Fatalf("expected 1 pruned activity, got %d", deleted)
+	}
+	if _, err := Prune(db, 0); err == nil {
+		t.Fatal("expected non-positive retention to fail")
+	}
+}
+
 func TestTransactionRollbackRemovesActivity(t *testing.T) {
 	db := openTestDB(t)
 

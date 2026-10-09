@@ -263,6 +263,29 @@ Available filters and modifiers include `ForSubject`, `ForSubjectID`,
 `ForSubjectType`, `CausedBy`, `InLog`, `InBatch`, `ForEvent`, `Latest`,
 `Oldest`, `Limit`, and `Offset`.
 
+## Pruning old activities
+
+Delete activities older than a retention duration:
+
+```go
+deleted, err := activitylog.Prune(db, 90*24*time.Hour)
+if err != nil {
+    return err
+}
+log.Printf("pruned %d activities", deleted)
+```
+
+Schedulers that already calculate a retention boundary can use an explicit
+cutoff:
+
+```go
+deleted, err := activitylog.PruneBefore(db, cutoff)
+```
+
+`PruneBefore` deletes rows whose `created_at` is strictly earlier than the
+cutoff. Both functions return the number of deleted rows and reject zero or
+negative retention values, zero cutoffs, and nil database connections.
+
 ## Temporarily disabling logging
 
 Suppress logging for one context while model operations continue normally:
