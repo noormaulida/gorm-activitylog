@@ -45,6 +45,12 @@ jobs:
         env:
           MYSQL_DSN: root:root@tcp(127.0.0.1:3306)/activitylog_test?parseTime=true
 
+      - name: Enforce 100% coverage
+        run: |
+          coverage="$(go tool cover -func=coverage.out | awk '/^total:/ {print $3}')"
+          echo "Total coverage: ${coverage}"
+          test "${coverage}" = "100.0%"
+
       - name: Run vet
         run: go vet ./...
 

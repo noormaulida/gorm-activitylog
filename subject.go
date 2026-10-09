@@ -45,10 +45,6 @@ func resolveSubject(db *gorm.DB, model any) (MorphID, string, error) {
 	modelType := statement.Schema.Table
 	if loggable, ok := model.(Loggable); ok {
 		modelType = subjectType(loggable, loggable.ActivityLogOptions(), statement.Schema)
-	} else if value.CanAddr() {
-		if loggable, ok := value.Addr().Interface().(Loggable); ok {
-			modelType = subjectType(loggable, loggable.ActivityLogOptions(), statement.Schema)
-		}
 	}
 
 	return id, modelType, nil

@@ -1,6 +1,7 @@
 package activitylog
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 
@@ -99,7 +100,11 @@ func (l *ActivityLogger) Log(description string) error {
 	if l.db == nil {
 		return errors.New("activitylog: nil database")
 	}
-	if l.db.Statement != nil && loggingDisabled(l.db.Statement.Context) {
+	ctx := context.Background()
+	if l.db.Statement != nil && l.db.Statement.Context != nil {
+		ctx = l.db.Statement.Context
+	}
+	if loggingDisabled(ctx) {
 		return nil
 	}
 
@@ -125,7 +130,7 @@ func (l *ActivityLogger) Log(description string) error {
 	}
 
 	if activity.CauserID == nil {
-		if id, modelType, ok, err := causerFromContext(l.db.Statement.Context); err != nil {
+		if id, modelType, ok, err := causerFromContext(ctx); err != nil {
 			return err
 		} else if ok {
 			activity.CauserID = &id
@@ -133,7 +138,7 @@ func (l *ActivityLogger) Log(description string) error {
 		}
 	}
 	if activity.BatchUUID == nil {
-		if batchUUID, ok := batchFromContext(l.db.Statement.Context); ok {
+		if batchUUID, ok := batchFromContext(ctx); ok {
 			activity.BatchUUID = &batchUUID
 		}
 	}

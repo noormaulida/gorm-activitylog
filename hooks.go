@@ -25,30 +25,43 @@ func (GORMPlugin) Name() string {
 
 // Initialize implements gorm.Plugin.
 func (GORMPlugin) Initialize(db *gorm.DB) error {
-	if err := db.Callback().Create().
-		After("gorm:after_create").
-		Before("gorm:commit_or_rollback_transaction").
-		Register("activitylog:after_create", afterCreateHook); err != nil {
-		return err
+	return registerCallbacks(
+		func() error {
+			return db.Callback().Create().
+				After("gorm:after_create").
+				Before("gorm:commit_or_rollback_transaction").
+				Register("activitylog:after_create", afterCreateHook)
+		},
+		func() error {
+			return db.Callback().Update().Before("gorm:update").
+				Register("activitylog:before_update", beforeUpdateHook)
+		},
+		func() error {
+			return db.Callback().Update().
+				After("gorm:after_update").
+				Before("gorm:commit_or_rollback_transaction").
+				Register("activitylog:after_update", afterUpdateHook)
+		},
+		func() error {
+			return db.Callback().Delete().Before("gorm:delete").
+				Register("activitylog:before_delete", beforeDeleteHook)
+		},
+		func() error {
+			return db.Callback().Delete().
+				After("gorm:after_delete").
+				Before("gorm:commit_or_rollback_transaction").
+				Register("activitylog:after_delete", afterDeleteHook)
+		},
+	)
+}
+
+func registerCallbacks(callbacks ...func() error) error {
+	for _, register := range callbacks {
+		if err := register(); err != nil {
+			return err
+		}
 	}
-	if err := db.Callback().Update().Before("gorm:update").
-		Register("activitylog:before_update", beforeUpdateHook); err != nil {
-		return err
-	}
-	if err := db.Callback().Update().
-		After("gorm:after_update").
-		Before("gorm:commit_or_rollback_transaction").
-		Register("activitylog:after_update", afterUpdateHook); err != nil {
-		return err
-	}
-	if err := db.Callback().Delete().Before("gorm:delete").
-		Register("activitylog:before_delete", beforeDeleteHook); err != nil {
-		return err
-	}
-	return db.Callback().Delete().
-		After("gorm:after_delete").
-		Before("gorm:commit_or_rollback_transaction").
-		Register("activitylog:after_delete", afterDeleteHook)
+	return nil
 }
 
 // Register installs the package callbacks on a GORM connection.
@@ -66,14 +79,6 @@ func statementLoggable(tx *gorm.DB) (Loggable, bool) {
 	for _, candidate := range []any{tx.Statement.Model, tx.Statement.Dest} {
 		if loggable, ok := candidate.(Loggable); ok {
 			return loggable, true
-		}
-
-		value := reflect.ValueOf(candidate)
-		value, ok := indirectValue(value)
-		if ok && value.Kind() == reflect.Struct && value.CanAddr() {
-			if loggable, ok := value.Addr().Interface().(Loggable); ok {
-				return loggable, true
-			}
 		}
 	}
 
@@ -147,16 +152,16 @@ func afterUpdateHook(tx *gorm.DB) {
 		return
 	}
 
+	opts := loggable.ActivityLogOptions()
+	if !shouldLogEvent(opts, EventUpdated) {
+		return
+	}
 	oldData, exists := tx.InstanceGet(oldDataKey)
 	if !exists {
 		tx.AddError(ErrMissingOldState)
 		return
 	}
 
-	opts := loggable.ActivityLogOptions()
-	if !shouldLogEvent(opts, EventUpdated) {
-		return
-	}
 	oldAttrs := extractAttributes(tx, reflect.ValueOf(oldData), opts)
 	oldValue, ok := indirectValue(reflect.ValueOf(oldData))
 	if !ok || oldValue.Kind() != reflect.Struct {
