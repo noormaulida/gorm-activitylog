@@ -112,32 +112,6 @@ func primaryKey(tx *gorm.DB, value reflect.Value) (*schema.Field, any, bool) {
 	return field, key, true
 }
 
-func numericID(value any) (uint64, bool) {
-	reflected := reflect.ValueOf(value)
-	if !reflected.IsValid() {
-		return 0, false
-	}
-
-	for reflected.Kind() == reflect.Pointer {
-		if reflected.IsNil() {
-			return 0, false
-		}
-		reflected = reflected.Elem()
-	}
-
-	switch reflected.Kind() {
-	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-		return reflected.Uint(), true
-	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		if reflected.Int() < 0 {
-			return 0, false
-		}
-		return uint64(reflected.Int()), true
-	default:
-		return 0, false
-	}
-}
-
 func subjectType(model Loggable, opts LogOptions, parsedSchema *schema.Schema) string {
 	if opts.SubjectType != "" {
 		return opts.SubjectType

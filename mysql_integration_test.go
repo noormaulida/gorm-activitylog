@@ -1,6 +1,7 @@
 package activitylog
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"testing"
@@ -31,6 +32,19 @@ func (*mysqlArticle) ActivityLogOptions() LogOptions {
 	}
 }
 
+type mysqlUUIDDocument struct {
+	ID    string `gorm:"primaryKey;size:36"`
+	Title string
+}
+
+func (mysqlUUIDDocument) TableName() string {
+	return "integration_documents"
+}
+
+func (*mysqlUUIDDocument) ActivityLogOptions() LogOptions {
+	return LogOptions{SubjectType: "App\\Models\\Document"}
+}
+
 func TestSpatieMySQLSchemaCompatibility(t *testing.T) {
 	dsn := os.Getenv("MYSQL_DSN")
 	if dsn == "" {
@@ -42,7 +56,7 @@ func TestSpatieMySQLSchemaCompatibility(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	for _, table := range []string{"activity_log", "integration_articles"} {
+	for _, table := range []string{"activity_log", "integration_articles", "integration_documents"} {
 		if err := db.Exec("DROP TABLE IF EXISTS " + table).Error; err != nil {
 			t.Fatal(err)
 		}
@@ -50,6 +64,7 @@ func TestSpatieMySQLSchemaCompatibility(t *testing.T) {
 	t.Cleanup(func() {
 		db.Exec("DROP TABLE IF EXISTS activity_log")
 		db.Exec("DROP TABLE IF EXISTS integration_articles")
+		db.Exec("DROP TABLE IF EXISTS integration_documents")
 	})
 
 	// Mirrors the current default Spatie Laravel Activitylog migration.
@@ -111,5 +126,51 @@ CREATE TABLE activity_log (
 	}
 	if len(update.Attributes) != 1 || update.Attributes["title"] != "After" {
 		t.Fatalf("unexpected new properties: %#v", update.Attributes)
+	}
+
+	if err := db.Exec("DROP TABLE activity_log").Error; err != nil {
+		t.Fatal(err)
+	}
+	const createUUIDActivityLog = `
+CREATE TABLE activity_log (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    log_name VARCHAR(255) NULL,
+    description TEXT NOT NULL,
+    subject_type VARCHAR(255) NULL,
+    event VARCHAR(255) NULL,
+    subject_id CHAR(36) NULL,
+    causer_type VARCHAR(255) NULL,
+    causer_id CHAR(36) NULL,
+    properties JSON NULL,
+    batch_uuid CHAR(36) NULL,
+    created_at TIMESTAMP NULL,
+    updated_at TIMESTAMP NULL,
+    INDEX subject (subject_type, subject_id),
+    INDEX causer (causer_type, causer_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`
+	if err := db.Exec(createUUIDActivityLog).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&mysqlUUIDDocument{}); err != nil {
+		t.Fatal(err)
+	}
+
+	const documentID = "018f8f4e-735b-7c44-89b2-3f2fcf0d97a1"
+	const userID = "018f8f51-a3c1-7118-a408-3763ebd7167c"
+	document := mysqlUUIDDocument{ID: documentID, Title: "UUID"}
+	ctx := WithCauser(context.Background(), userID, "App\\Models\\User")
+	if err := db.WithContext(ctx).Create(&document).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	var uuidLog Activity
+	if err := db.First(&uuidLog).Error; err != nil {
+		t.Fatal(err)
+	}
+	if uuidLog.SubjectID == nil || uuidLog.SubjectID.String() != documentID {
+		t.Fatalf("unexpected UUID subject: %v", uuidLog.SubjectID)
+	}
+	if uuidLog.CauserID == nil || uuidLog.CauserID.String() != userID {
+		t.Fatalf("unexpected UUID causer: %v", uuidLog.CauserID)
 	}
 }

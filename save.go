@@ -17,18 +17,22 @@ func saveActivity(tx *gorm.DB, loggable Loggable, event string, logName string, 
 	if !ok {
 		return
 	}
-	subjectID, ok := numericID(key)
-	if !ok {
+	subjectID, err := NewMorphID(key)
+	if err != nil {
+		tx.AddError(err)
 		return
 	}
 
 	options := loggable.ActivityLogOptions()
 	subjectTypeValue := subjectType(loggable, options, tx.Statement.Schema)
-	var causerID *uint64
+	var causerID *MorphID
 	var causerType *string
 	var batchUUID *string
 
-	if id, modelType, exists := causerFromContext(tx.Statement.Context); exists {
+	if id, modelType, exists, err := causerFromContext(tx.Statement.Context); err != nil {
+		tx.AddError(err)
+		return
+	} else if exists {
 		causerID = &id
 		causerType = &modelType
 	}

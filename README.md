@@ -161,6 +161,24 @@ err := activitylog.New(db).
 
 Use `PerformedOn(&article)` to attach a model subject. It reads the primary key and uses `SubjectType` from the model's `LogOptions`.
 
+### UUID and ULID morph IDs
+
+Model and causer IDs may be numeric values or strings:
+
+```go
+activitylog.New(db).
+    CausedBy("018f8f51-a3c1-7118-a408-3763ebd7167c", "users").
+    PerformedOn(&document).
+    Log("Document viewed")
+```
+
+Read an ID with `activity.SubjectID.String()`. For numeric schemas,
+`activity.SubjectID.Uint64()` returns the numeric value and a boolean.
+
+`activitylog.Migrate` intentionally creates Spatie's default numeric morph
+columns. Applications using UUID or ULID IDs must create `activity_log` with
+Laravel's `uuidMorphs` or `ulidMorphs` migration instead of calling `Migrate`.
+
 ## Batch logging
 
 Group multiple automatic activities by carrying one UUID in their context:
@@ -194,8 +212,8 @@ error.
 
 ## Current limitations
 
-- Automatic subjects require exactly one non-zero numeric primary key.
-- UUID/ULID and composite primary keys are not currently supported.
+- Automatic subjects require exactly one non-zero numeric, UUID, or ULID primary key.
+- Composite primary keys are not currently supported.
 - Instance-based operations such as `Create`, `Save`, `Update`, and `Delete` are supported. Bulk updates/deletes and operations whose model is a map do not produce automatic per-record activities.
 - `Activity` targets the modern Spatie columns, including `event` and `batch_uuid`; compare its schema with the exact Spatie migration version used by an existing application before running `Migrate`.
 

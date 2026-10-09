@@ -14,9 +14,9 @@ type ActivityLogger struct {
 	db          *gorm.DB
 	logName     string
 	event       *string
-	causerID    *uint64
+	causerID    *MorphID
 	causerType  *string
-	subjectID   *uint64
+	subjectID   *MorphID
 	subjectType *string
 	batchUUID   *string
 	properties  map[string]any
@@ -48,8 +48,13 @@ func (l *ActivityLogger) Event(event string) *ActivityLogger {
 }
 
 // CausedBy manually sets the user who triggered the event.
-func (l *ActivityLogger) CausedBy(id uint64, causerType string) *ActivityLogger {
-	l.causerID = &id
+func (l *ActivityLogger) CausedBy(id any, causerType string) *ActivityLogger {
+	identifier, err := NewMorphID(id)
+	if err != nil {
+		l.err = err
+		return l
+	}
+	l.causerID = &identifier
 	l.causerType = &causerType
 	return l
 }
@@ -93,9 +98,13 @@ func (l *ActivityLogger) PerformedOn(model any) *ActivityLogger {
 	}
 
 	key, zero := stmt.Schema.PrimaryFields[0].ValueOf(l.db.Statement.Context, value)
-	id, ok := numericID(key)
-	if zero || !ok {
-		l.err = errors.New("activitylog: PerformedOn requires a non-zero numeric primary key")
+	if zero {
+		l.err = errors.New("activitylog: PerformedOn requires a non-zero primary key")
+		return l
+	}
+	id, err := NewMorphID(key)
+	if err != nil {
+		l.err = err
 		return l
 	}
 
@@ -140,7 +149,9 @@ func (l *ActivityLogger) Log(description string) error {
 	}
 
 	if activity.CauserID == nil {
-		if id, modelType, ok := causerFromContext(l.db.Statement.Context); ok {
+		if id, modelType, ok, err := causerFromContext(l.db.Statement.Context); err != nil {
+			return err
+		} else if ok {
 			activity.CauserID = &id
 			activity.CauserType = &modelType
 		}

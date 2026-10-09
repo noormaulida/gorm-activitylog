@@ -23,6 +23,18 @@ type testUser struct {
 	DeletedAt gorm.DeletedAt
 }
 
+type uuidDocument struct {
+	ID    string `gorm:"primaryKey;size:36"`
+	Title string
+}
+
+func (*uuidDocument) ActivityLogOptions() LogOptions {
+	return LogOptions{
+		SubjectType:  "App\\Models\\Document",
+		LogOnlyDirty: true,
+	}
+}
+
 func (*testUser) ActivityLogOptions() LogOptions {
 	return LogOptions{
 		LogName:          "users",
@@ -77,6 +89,18 @@ func properties(t *testing.T, activity Activity) map[string]any {
 	return result
 }
 
+func numericMorphID(t *testing.T, id *MorphID) uint64 {
+	t.Helper()
+	if id == nil {
+		t.Fatal("expected morph ID, got nil")
+	}
+	value, ok := id.Uint64()
+	if !ok {
+		t.Fatalf("expected numeric morph ID, got %q", id.String())
+	}
+	return value
+}
+
 func TestCreateLogsFilteredAttributesAndCauser(t *testing.T) {
 	db := openTestDB(t)
 	ctx := WithCauser(context.Background(), 42, "App\\Models\\Admin")
@@ -94,13 +118,13 @@ func TestCreateLogsFilteredAttributesAndCauser(t *testing.T) {
 	if log.Event == nil || *log.Event != "created" {
 		t.Fatalf("unexpected event: %v", log.Event)
 	}
-	if log.SubjectID == nil || *log.SubjectID != user.ID {
+	if numericMorphID(t, log.SubjectID) != user.ID {
 		t.Fatalf("unexpected subject ID: %v", log.SubjectID)
 	}
 	if log.SubjectType == nil || *log.SubjectType != "App\\Models\\User" {
 		t.Fatalf("unexpected subject type: %v", log.SubjectType)
 	}
-	if log.CauserID == nil || *log.CauserID != 42 {
+	if numericMorphID(t, log.CauserID) != 42 {
 		t.Fatalf("unexpected causer ID: %v", log.CauserID)
 	}
 
@@ -110,6 +134,32 @@ func TestCreateLogsFilteredAttributesAndCauser(t *testing.T) {
 	}
 	if attributes["name"] != "Noor" {
 		t.Fatalf("unexpected attributes: %#v", attributes)
+	}
+}
+
+func TestUUIDSubjectAndCauser(t *testing.T) {
+	db := openTestDB(t)
+	if err := db.AutoMigrate(&uuidDocument{}); err != nil {
+		t.Fatal(err)
+	}
+
+	const subjectID = "018f8f4e-735b-7c44-89b2-3f2fcf0d97a1"
+	const causerID = "018f8f51-a3c1-7118-a408-3763ebd7167c"
+	ctx := WithCauser(context.Background(), causerID, "App\\Models\\User")
+	document := uuidDocument{ID: subjectID, Title: "UUID subject"}
+	if err := db.WithContext(ctx).Create(&document).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	logs := activities(t, db)
+	if len(logs) != 1 {
+		t.Fatalf("expected 1 activity, got %d", len(logs))
+	}
+	if logs[0].SubjectID == nil || logs[0].SubjectID.String() != subjectID {
+		t.Fatalf("unexpected UUID subject: %v", logs[0].SubjectID)
+	}
+	if logs[0].CauserID == nil || logs[0].CauserID.String() != causerID {
+		t.Fatalf("unexpected UUID causer: %v", logs[0].CauserID)
 	}
 }
 
@@ -338,7 +388,7 @@ func TestConcurrentContextsDoNotLeakCausers(t *testing.T) {
 		if _, err := fmt.Sscanf(attrs["name"].(string), "user-%d", &expected); err != nil {
 			t.Fatal(err)
 		}
-		if log.CauserID == nil || *log.CauserID != expected {
+		if numericMorphID(t, log.CauserID) != expected {
 			t.Fatalf("causer leaked for %q: got %v, want %d", attrs["name"], log.CauserID, expected)
 		}
 	}

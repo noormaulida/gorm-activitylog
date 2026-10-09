@@ -15,9 +15,9 @@ type Activity struct {
 	Description string         `gorm:"type:text;not null"`
 	SubjectType *string        `gorm:"size:255;index:subject"`
 	Event       *string        `gorm:"size:255"`
-	SubjectID   *uint64        `gorm:"index:subject"`
+	SubjectID   *MorphID       `gorm:"index:subject"`
 	CauserType  *string        `gorm:"size:255;index:causer"`
-	CauserID    *uint64        `gorm:"index:causer"`
+	CauserID    *MorphID       `gorm:"index:causer"`
 	Properties  datatypes.JSON `gorm:"type:json"`
 	BatchUUID   *string        `gorm:"type:char(36);index"`
 	CreatedAt   time.Time
@@ -60,29 +60,30 @@ const (
 )
 
 type causerContextValue struct {
-	id        uint64
+	id        any
 	modelType string
 }
 
 // WithCauser returns a context carrying the actor for automatic activity logs.
-func WithCauser(ctx context.Context, id uint64, modelType string) context.Context {
+func WithCauser(ctx context.Context, id any, modelType string) context.Context {
 	return context.WithValue(ctx, causerContextKey, causerContextValue{
 		id:        id,
 		modelType: modelType,
 	})
 }
 
-func causerFromContext(ctx context.Context) (uint64, string, bool) {
+func causerFromContext(ctx context.Context) (MorphID, string, bool, error) {
 	if ctx == nil {
-		return 0, "", false
+		return MorphID{}, "", false, nil
 	}
 
 	value, ok := ctx.Value(causerContextKey).(causerContextValue)
 	if !ok {
-		return 0, "", false
+		return MorphID{}, "", false, nil
 	}
 
-	return value.id, value.modelType, true
+	id, err := NewMorphID(value.id)
+	return id, value.modelType, true, err
 }
 
 // WithBatch returns a context that groups automatic activities under one UUID.
