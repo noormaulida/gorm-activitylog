@@ -205,6 +205,30 @@ activitylog.New(db).
 The package accepts UUID strings without generating or validating them, so the
 application remains responsible for choosing its UUID version and generator.
 
+## Temporarily disabling logging
+
+Suppress logging for one context while model operations continue normally:
+
+```go
+ctx := activitylog.WithoutLogging(request.Context())
+db.WithContext(ctx).Create(&article)
+```
+
+For seeders, imports, or maintenance tasks, use a scoped callback:
+
+```go
+err := activitylog.RunWithoutLogging(db, func(tx *gorm.DB) error {
+    if err := tx.CreateInBatches(records, 500).Error; err != nil {
+        return err
+    }
+    return tx.Model(&Article{}).Update("indexed", true).Error
+})
+```
+
+Suppression also applies to manual `activitylog.New(tx).Log(...)` calls made
+with the scoped DB. It is context-local and does not affect concurrent
+requests.
+
 ## Transaction behavior
 
 Automatic activities are inserted through the same database transaction as the model operation. Rolling back the model change also rolls back its activity. Failure to serialize or insert an activity is returned as a GORM operation

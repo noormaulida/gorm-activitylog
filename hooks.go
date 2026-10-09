@@ -54,7 +54,8 @@ func Register(db *gorm.DB) error {
 
 func statementLoggable(tx *gorm.DB) (Loggable, bool) {
 	if tx.Statement == nil || tx.Statement.Schema == nil ||
-		tx.Statement.Schema.Table == (Activity{}).TableName() {
+		tx.Statement.Schema.Table == (Activity{}).TableName() ||
+		loggingDisabled(tx.Statement.Context) {
 		return nil, false
 	}
 

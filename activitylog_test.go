@@ -228,6 +228,53 @@ func TestNoOpUpdateDoesNotCreateActivity(t *testing.T) {
 	}
 }
 
+func TestWithoutLoggingSuppressesAutomaticAndManualLogs(t *testing.T) {
+	db := openTestDB(t)
+	ctx := WithoutLogging(context.Background())
+	quietDB := db.WithContext(ctx)
+
+	if err := quietDB.Create(&testUser{Name: "Silent"}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := New(quietDB).Log("Must be suppressed"); err != nil {
+		t.Fatal(err)
+	}
+
+	if count := len(activities(t, db)); count != 0 {
+		t.Fatalf("expected no activities, got %d", count)
+	}
+	var users int64
+	if err := db.Model(&testUser{}).Count(&users).Error; err != nil {
+		t.Fatal(err)
+	}
+	if users != 1 {
+		t.Fatalf("expected model operation to continue, got %d users", users)
+	}
+}
+
+func TestRunWithoutLoggingDoesNotLeakToOtherSessions(t *testing.T) {
+	db := openTestDB(t)
+
+	err := RunWithoutLogging(db, func(tx *gorm.DB) error {
+		return tx.Create(&testUser{Name: "Silent"}).Error
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&testUser{Name: "Logged"}).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	logs := activities(t, db)
+	if len(logs) != 1 {
+		t.Fatalf("expected only the normal activity, got %d", len(logs))
+	}
+	attributes := properties(t, logs[0])["attributes"].(map[string]any)
+	if attributes["name"] != "Logged" {
+		t.Fatalf("unexpected logged model: %#v", attributes)
+	}
+}
+
 func TestDeleteLogsPreDeleteValues(t *testing.T) {
 	db := openTestDB(t)
 	user := testUser{Name: "Deleted"}

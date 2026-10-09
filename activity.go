@@ -57,6 +57,7 @@ type contextKey uint8
 const (
 	causerContextKey contextKey = iota
 	batchContextKey
+	loggingDisabledContextKey
 )
 
 type causerContextValue struct {

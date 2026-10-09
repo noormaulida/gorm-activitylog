@@ -126,6 +126,9 @@ func (l *ActivityLogger) Log(description string) error {
 	if l.db == nil {
 		return errors.New("activitylog: nil database")
 	}
+	if l.db.Statement != nil && loggingDisabled(l.db.Statement.Context) {
+		return nil
+	}
 
 	properties := l.properties
 	if properties == nil {
