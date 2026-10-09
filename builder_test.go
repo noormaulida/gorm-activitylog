@@ -16,7 +16,7 @@ func TestActivityLoggerGuardBranches(t *testing.T) {
 		t.Fatalf("unexpected empty options: %#v", logger)
 	}
 
-	invalid := New(db).CausedBy("invalid", "User")
+	invalid := New(db).CausedBy("invalid", "users")
 	if invalid.err == nil || invalid.Log("invalid") == nil {
 		t.Fatal("expected invalid causer error")
 	}
@@ -46,7 +46,7 @@ func TestActivityLoggerGuardBranches(t *testing.T) {
 func TestActivityLoggerUsesContextDefaults(t *testing.T) {
 	db := openTestDB(t)
 	ctx := WithBatch(
-		WithCauser(context.Background(), uint64(91), "Admin"),
+		WithCauser(context.Background(), uint64(91), "admins"),
 		"018f8f4e-735b-7c44-89b2-3f2fcf0d97a1",
 	)
 	if err := New(db.WithContext(ctx)).Log("context defaults"); err != nil {
@@ -57,7 +57,7 @@ func TestActivityLoggerUsesContextDefaults(t *testing.T) {
 	if err := db.First(&activity).Error; err != nil {
 		t.Fatal(err)
 	}
-	if numericMorphID(t, activity.CauserID) != 91 || activity.CauserType == nil || *activity.CauserType != "Admin" {
+	if numericMorphID(t, activity.CauserID) != 91 || activity.CauserType == nil || *activity.CauserType != "admins" {
 		t.Fatalf("unexpected causer: %#v", activity)
 	}
 	if activity.BatchUUID == nil || *activity.BatchUUID == "" {
@@ -67,7 +67,7 @@ func TestActivityLoggerUsesContextDefaults(t *testing.T) {
 
 func TestActivityLoggerReturnsContextAndDatabaseErrors(t *testing.T) {
 	db := openTestDB(t)
-	invalidContext := WithCauser(context.Background(), "invalid", "User")
+	invalidContext := WithCauser(context.Background(), "invalid", "users")
 	if err := New(db.WithContext(invalidContext)).Log("invalid context"); err == nil {
 		t.Fatal("expected context causer error")
 	}

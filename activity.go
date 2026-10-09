@@ -43,7 +43,7 @@ type Loggable interface {
 // LogOptions controls which model changes are recorded.
 //
 // Attribute names may be Go field names or database column names. SubjectType
-// should be set to the Laravel morph class or alias when sharing a database.
+// should use a stable morph alias when sharing data between applications.
 type LogOptions struct {
 	LogName             string
 	SubjectType         string

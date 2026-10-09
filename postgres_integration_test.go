@@ -27,7 +27,7 @@ func (postgresArticle) TableName() string {
 func (*postgresArticle) ActivityLogOptions() LogOptions {
 	return LogOptions{
 		LogName:          "articles",
-		SubjectType:      "App\\Models\\Article",
+		SubjectType:      "articles",
 		IgnoreAttributes: []string{"secret", "updated_at"},
 		LogOnlyDirty:     true,
 	}
@@ -43,7 +43,7 @@ func (postgresUUIDDocument) TableName() string {
 }
 
 func (*postgresUUIDDocument) ActivityLogOptions() LogOptions {
-	return LogOptions{SubjectType: "App\\Models\\Document"}
+	return LogOptions{SubjectType: "documents"}
 }
 
 func TestSpatiePostgreSQLSchemaCompatibility(t *testing.T) {
@@ -204,7 +204,7 @@ CREATE TABLE activity_log (
 	const documentID = "018f8f4e-735b-7c44-89b2-3f2fcf0d97a1"
 	const userID = "018f8f51-a3c1-7118-a408-3763ebd7167c"
 	document := postgresUUIDDocument{ID: documentID, Title: "UUID"}
-	ctx := WithCauser(context.Background(), userID, "App\\Models\\User")
+	ctx := WithCauser(context.Background(), userID, "users")
 	if err := db.WithContext(ctx).Create(&document).Error; err != nil {
 		t.Fatal(err)
 	}

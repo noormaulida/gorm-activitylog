@@ -17,7 +17,7 @@ type exampleArticle struct {
 func (*exampleArticle) ActivityLogOptions() activitylog.LogOptions {
 	return activitylog.LogOptions{
 		LogName:       "articles",
-		SubjectType:   "App\\Models\\Article",
+		SubjectType:   "articles",
 		LogOnlyDirty:  true,
 		LogAttributes: []string{"title"},
 	}
@@ -62,7 +62,7 @@ func ExampleNew() {
 	err := activitylog.New(db).
 		UseLog("auth").
 		Event("login").
-		CausedBy(uint64(42), "App\\Models\\User").
+		CausedBy(uint64(42), "users").
 		WithProperties(map[string]any{"ip_address": "127.0.0.1"}).
 		Log("User logged in")
 	if err != nil {
@@ -82,7 +82,7 @@ func ExampleWithCauser() {
 	ctx := activitylog.WithCauser(
 		context.Background(),
 		uint64(42),
-		"App\\Models\\User",
+		"users",
 	)
 
 	if err := db.WithContext(ctx).
@@ -96,7 +96,7 @@ func ExampleWithCauser() {
 	}
 	causerID, _ := activity.CauserID.Uint64()
 	fmt.Println(causerID, *activity.CauserType)
-	// Output: 42 App\Models\User
+	// Output: 42 users
 }
 
 func ExampleQuery() {

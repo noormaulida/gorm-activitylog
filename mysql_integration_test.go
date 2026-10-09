@@ -26,7 +26,7 @@ func (mysqlArticle) TableName() string {
 func (*mysqlArticle) ActivityLogOptions() LogOptions {
 	return LogOptions{
 		LogName:          "articles",
-		SubjectType:      "App\\Models\\Article",
+		SubjectType:      "articles",
 		IgnoreAttributes: []string{"secret", "updated_at"},
 		LogOnlyDirty:     true,
 	}
@@ -42,7 +42,7 @@ func (mysqlUUIDDocument) TableName() string {
 }
 
 func (*mysqlUUIDDocument) ActivityLogOptions() LogOptions {
-	return LogOptions{SubjectType: "App\\Models\\Document"}
+	return LogOptions{SubjectType: "documents"}
 }
 
 func TestSpatieMySQLSchemaCompatibility(t *testing.T) {
@@ -113,8 +113,8 @@ CREATE TABLE activity_log (
 	if len(logs) != 2 {
 		t.Fatalf("expected create and update activities, got %d", len(logs))
 	}
-	if logs[0].SubjectType == nil || *logs[0].SubjectType != "App\\Models\\Article" {
-		t.Fatalf("unexpected Laravel morph type: %v", logs[0].SubjectType)
+	if logs[0].SubjectType == nil || *logs[0].SubjectType != "articles" {
+		t.Fatalf("unexpected morph alias: %v", logs[0].SubjectType)
 	}
 
 	var update ActivityProperties
@@ -158,7 +158,7 @@ CREATE TABLE activity_log (
 	const documentID = "018f8f4e-735b-7c44-89b2-3f2fcf0d97a1"
 	const userID = "018f8f51-a3c1-7118-a408-3763ebd7167c"
 	document := mysqlUUIDDocument{ID: documentID, Title: "UUID"}
-	ctx := WithCauser(context.Background(), userID, "App\\Models\\User")
+	ctx := WithCauser(context.Background(), userID, "users")
 	if err := db.WithContext(ctx).Create(&document).Error; err != nil {
 		t.Fatal(err)
 	}

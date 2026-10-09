@@ -6,9 +6,9 @@ func TestActivityQueryValidationErrors(t *testing.T) {
 	nilQuery := Query(nil)
 	nilQuery.
 		ForSubject(&testUser{ID: 1}).
-		ForSubjectID(1, "User").
-		ForSubjectType("User").
-		CausedBy(1, "User").
+		ForSubjectID(1, "users").
+		ForSubjectType("users").
+		CausedBy(1, "users").
 		InLog("default").
 		InBatch("batch").
 		ForEvent(EventCreated).
@@ -29,9 +29,9 @@ func TestActivityQueryValidationErrors(t *testing.T) {
 	db := openTestDB(t)
 	for name, query := range map[string]*ActivityQuery{
 		"subject resolution": Query(db).ForSubject(&testUser{}),
-		"subject id":         Query(db).ForSubjectID("invalid", "User"),
+		"subject id":         Query(db).ForSubjectID("invalid", "users"),
 		"subject type":       Query(db).ForSubjectID(1, ""),
-		"causer id":          Query(db).CausedBy("invalid", "User"),
+		"causer id":          Query(db).CausedBy("invalid", "users"),
 		"causer type":        Query(db).CausedBy(1, ""),
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -47,7 +47,7 @@ func TestActivityQuerySubjectTypeAndDatabaseErrors(t *testing.T) {
 	if err := db.Create(&testUser{Name: "query"}).Error; err != nil {
 		t.Fatal(err)
 	}
-	found, err := Query(db).ForSubjectType("App\\Models\\User").Find()
+	found, err := Query(db).ForSubjectType("users").Find()
 	if err != nil {
 		t.Fatal(err)
 	}

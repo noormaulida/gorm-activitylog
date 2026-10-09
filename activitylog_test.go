@@ -32,7 +32,7 @@ type uuidDocument struct {
 
 func (*uuidDocument) ActivityLogOptions() LogOptions {
 	return LogOptions{
-		SubjectType:  "App\\Models\\Document",
+		SubjectType:  "documents",
 		LogOnlyDirty: true,
 	}
 }
@@ -47,7 +47,7 @@ func (*eventArticle) ActivityLogOptions() LogOptions {
 	return LogOptions{
 		LogEvents:    []string{EventUpdated, EventDeleted},
 		LogOnlyDirty: true,
-		SubjectType:  "App\\Models\\Article",
+		SubjectType:  "articles",
 		DescriptionForEvent: func(event string) string {
 			if event == EventUpdated {
 				return "Article was published"
@@ -75,7 +75,7 @@ func (*marshalFailureModel) ActivityLogOptions() LogOptions {
 func (*testUser) ActivityLogOptions() LogOptions {
 	return LogOptions{
 		LogName:          "users",
-		SubjectType:      "App\\Models\\User",
+		SubjectType:      "users",
 		IgnoreAttributes: []string{"password", "updated_at", "deleted_at"},
 		LogOnlyDirty:     true,
 	}
@@ -140,7 +140,7 @@ func numericMorphID(t *testing.T, id *MorphID) uint64 {
 
 func TestCreateLogsFilteredAttributesAndCauser(t *testing.T) {
 	db := openTestDB(t)
-	ctx := WithCauser(context.Background(), 42, "App\\Models\\Admin")
+	ctx := WithCauser(context.Background(), 42, "admins")
 	user := testUser{Name: "Noor", Email: "noor@example.com", Password: "secret"}
 
 	if err := db.WithContext(ctx).Create(&user).Error; err != nil {
@@ -158,7 +158,7 @@ func TestCreateLogsFilteredAttributesAndCauser(t *testing.T) {
 	if numericMorphID(t, log.SubjectID) != user.ID {
 		t.Fatalf("unexpected subject ID: %v", log.SubjectID)
 	}
-	if log.SubjectType == nil || *log.SubjectType != "App\\Models\\User" {
+	if log.SubjectType == nil || *log.SubjectType != "users" {
 		t.Fatalf("unexpected subject type: %v", log.SubjectType)
 	}
 	if numericMorphID(t, log.CauserID) != 42 {
@@ -182,7 +182,7 @@ func TestUUIDSubjectAndCauser(t *testing.T) {
 
 	const subjectID = "018f8f4e-735b-7c44-89b2-3f2fcf0d97a1"
 	const causerID = "018f8f51-a3c1-7118-a408-3763ebd7167c"
-	ctx := WithCauser(context.Background(), causerID, "App\\Models\\User")
+	ctx := WithCauser(context.Background(), causerID, "users")
 	document := uuidDocument{ID: subjectID, Title: "UUID subject"}
 	if err := db.WithContext(ctx).Create(&document).Error; err != nil {
 		t.Fatal(err)
@@ -199,7 +199,7 @@ func TestUUIDSubjectAndCauser(t *testing.T) {
 		t.Fatalf("unexpected UUID causer: %v", logs[0].CauserID)
 	}
 
-	found, err := Query(db).ForSubject(&document).CausedBy(causerID, "App\\Models\\User").First()
+	found, err := Query(db).ForSubject(&document).CausedBy(causerID, "users").First()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -393,7 +393,7 @@ func TestManualLoggerStoresArbitraryProperties(t *testing.T) {
 	err := New(db).
 		UseLog("auth").
 		Event("login").
-		CausedBy(7, "App\\Models\\User").
+		CausedBy(7, "users").
 		InBatch("018f8f4e-735b-7c44-89b2-3f2fcf0d97a1").
 		PerformedOn(&user).
 		WithProperties(map[string]any{"ip_address": "127.0.0.1"}).
@@ -446,7 +446,7 @@ func TestActivityQueryFiltersAndOrdering(t *testing.T) {
 
 	first := testUser{Name: "First"}
 	firstCtx := WithBatch(
-		WithCauser(context.Background(), 7, "App\\Models\\Admin"),
+		WithCauser(context.Background(), 7, "admins"),
 		"batch-first",
 	)
 	if err := db.WithContext(firstCtx).Create(&first).Error; err != nil {
@@ -459,7 +459,7 @@ func TestActivityQueryFiltersAndOrdering(t *testing.T) {
 
 	second := testUser{Name: "Second"}
 	secondCtx := WithBatch(
-		WithCauser(context.Background(), 8, "App\\Models\\Admin"),
+		WithCauser(context.Background(), 8, "admins"),
 		"batch-second",
 	)
 	if err := db.WithContext(secondCtx).Create(&second).Error; err != nil {
@@ -478,7 +478,7 @@ func TestActivityQueryFiltersAndOrdering(t *testing.T) {
 	}
 
 	causerCount, err := Query(db).
-		CausedBy(7, "App\\Models\\Admin").
+		CausedBy(7, "admins").
 		Count()
 	if err != nil {
 		t.Fatal(err)
@@ -565,7 +565,7 @@ func TestPruneUsesRetentionDuration(t *testing.T) {
 
 func TestInvalidUUIDCauserRollsBackModel(t *testing.T) {
 	db := openTestDB(t)
-	ctx := WithCauser(context.Background(), "not-a-valid-uuid", "User")
+	ctx := WithCauser(context.Background(), "not-a-valid-uuid", "users")
 
 	err := db.WithContext(ctx).Create(&testUser{Name: "Must roll back"}).Error
 	if err == nil {
@@ -688,7 +688,7 @@ func TestConcurrentContextsDoNotLeakCausers(t *testing.T) {
 		wait.Add(1)
 		go func(id uint64) {
 			defer wait.Done()
-			ctx := WithCauser(context.Background(), id, "User")
+			ctx := WithCauser(context.Background(), id, "users")
 			name := fmt.Sprintf("user-%d", id)
 			errors <- db.WithContext(ctx).Create(&testUser{Name: name}).Error
 		}(uint64(i))

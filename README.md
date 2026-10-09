@@ -68,7 +68,7 @@ type Article struct {
 func (*Article) ActivityLogOptions() activitylog.LogOptions {
     return activitylog.LogOptions{
         LogName:          "articles",
-        SubjectType:      "App\\Models\\Article",
+        SubjectType:      "articles",
         IgnoreAttributes: []string{"secret", "updated_at"},
         LogOnlyDirty:     true,
     }
@@ -85,7 +85,10 @@ db.Delete(&article)
 
 `LogAttributes` is an optional whitelist. `IgnoreAttributes` is always applied after it and therefore takes precedence. Both Go field names and database column names are accepted.
 
-Set `SubjectType` to the Laravel morph class or morph-map alias when sharing a database. If omitted, the GORM table name is used.
+Set `SubjectType` to a stable alias such as `articles`. If omitted, the GORM
+table name is used. When sharing a legacy Laravel database that stores PHP
+class names, either use the exact existing value or configure a Laravel morph
+map so both applications can use the same stable alias.
 
 ### Event controls and descriptions
 
@@ -121,7 +124,7 @@ Put the authenticated user into a standard Go context and pass that context to G
 ctx := activitylog.WithCauser(
     request.Context(),
     authenticatedUser.ID,
-    "App\\Models\\User",
+    "users",
 )
 
 if err := db.WithContext(ctx).Create(&article).Error; err != nil {
@@ -138,7 +141,7 @@ func ActivityContext() gin.HandlerFunc {
         ctx := activitylog.WithCauser(
             c.Request.Context(),
             userID,
-            "App\\Models\\User",
+            "users",
         )
         c.Request = c.Request.WithContext(ctx)
         c.Next()
@@ -157,7 +160,7 @@ func ActivityContext(c *fiber.Ctx) error {
         ctx := activitylog.WithCauser(
             c.UserContext(),
             userID,
-            "App\\Models\\User",
+            "users",
         )
         c.SetUserContext(ctx)
     }
@@ -178,7 +181,7 @@ Manual properties are stored directly in the `properties` JSON object:
 err := activitylog.New(db).
     UseLog("auth").
     Event("login").
-    CausedBy(user.ID, "App\\Models\\User").
+    CausedBy(user.ID, "users").
     WithProperties(map[string]any{
         "ip_address": request.RemoteAddr,
     }).
@@ -249,12 +252,12 @@ Subject and causer filters support numeric, UUID, and ULID identifiers:
 
 ```go
 count, err := activitylog.Query(db).
-    CausedBy(user.ID, "App\\Models\\User").
+    CausedBy(user.ID, "users").
     InBatch(batchUUID).
     Count()
 
 latest, err := activitylog.Query(db).
-    ForSubjectID(articleID, "App\\Models\\Article").
+    ForSubjectID(articleID, "articles").
     Latest().
     First()
 ```
