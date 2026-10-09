@@ -3,7 +3,6 @@ package activitylog
 import (
 	"encoding/json"
 	"errors"
-	"reflect"
 
 	"gorm.io/datatypes"
 	"gorm.io/gorm"
@@ -81,36 +80,10 @@ func (l *ActivityLogger) PerformedOn(model any) *ActivityLogger {
 		return l
 	}
 
-	stmt := &gorm.Statement{DB: l.db}
-	if err := stmt.Parse(model); err != nil {
-		l.err = err
-		return l
-	}
-	if len(stmt.Schema.PrimaryFields) != 1 {
-		l.err = errors.New("activitylog: PerformedOn requires one primary key")
-		return l
-	}
-
-	value, ok := indirectValue(reflect.ValueOf(model))
-	if !ok || value.Kind() != reflect.Struct {
-		l.err = errors.New("activitylog: PerformedOn requires a model struct")
-		return l
-	}
-
-	key, zero := stmt.Schema.PrimaryFields[0].ValueOf(l.db.Statement.Context, value)
-	if zero {
-		l.err = errors.New("activitylog: PerformedOn requires a non-zero primary key")
-		return l
-	}
-	id, err := NewMorphID(key)
+	id, modelType, err := resolveSubject(l.db, model)
 	if err != nil {
 		l.err = err
 		return l
-	}
-
-	modelType := stmt.Schema.Table
-	if loggable, ok := model.(Loggable); ok {
-		modelType = subjectType(loggable, loggable.ActivityLogOptions(), stmt.Schema)
 	}
 
 	l.subjectID = &id

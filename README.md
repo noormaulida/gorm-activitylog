@@ -231,6 +231,38 @@ activitylog.New(db).
 The package accepts UUID strings without generating or validating them, so the
 application remains responsible for choosing its UUID version and generator.
 
+## Querying activities
+
+Use the fluent query helper to combine common activity filters:
+
+```go
+activities, err := activitylog.Query(db).
+    ForSubject(&article).
+    InLog("articles").
+    ForEvent(activitylog.EventUpdated).
+    Latest().
+    Limit(20).
+    Find()
+```
+
+Subject and causer filters support numeric, UUID, and ULID identifiers:
+
+```go
+count, err := activitylog.Query(db).
+    CausedBy(user.ID, "App\\Models\\User").
+    InBatch(batchUUID).
+    Count()
+
+latest, err := activitylog.Query(db).
+    ForSubjectID(articleID, "App\\Models\\Article").
+    Latest().
+    First()
+```
+
+Available filters and modifiers include `ForSubject`, `ForSubjectID`,
+`ForSubjectType`, `CausedBy`, `InLog`, `InBatch`, `ForEvent`, `Latest`,
+`Oldest`, `Limit`, and `Offset`.
+
 ## Temporarily disabling logging
 
 Suppress logging for one context while model operations continue normally:

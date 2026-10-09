@@ -181,6 +181,14 @@ func TestUUIDSubjectAndCauser(t *testing.T) {
 	if logs[0].CauserID == nil || logs[0].CauserID.String() != causerID {
 		t.Fatalf("unexpected UUID causer: %v", logs[0].CauserID)
 	}
+
+	found, err := Query(db).ForSubject(&document).CausedBy(causerID, "App\\Models\\User").First()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if found.SubjectID == nil || found.SubjectID.String() != subjectID {
+		t.Fatalf("query returned unexpected UUID subject: %v", found.SubjectID)
+	}
 }
 
 func TestEventControlsAndCustomDescription(t *testing.T) {
@@ -413,6 +421,74 @@ func TestBatchContextGroupsAutomaticActivities(t *testing.T) {
 		if log.BatchUUID == nil || *log.BatchUUID != batchUUID {
 			t.Fatalf("unexpected batch UUID: %v", log.BatchUUID)
 		}
+	}
+}
+
+func TestActivityQueryFiltersAndOrdering(t *testing.T) {
+	db := openTestDB(t)
+
+	first := testUser{Name: "First"}
+	firstCtx := WithBatch(
+		WithCauser(context.Background(), 7, "App\\Models\\Admin"),
+		"batch-first",
+	)
+	if err := db.WithContext(firstCtx).Create(&first).Error; err != nil {
+		t.Fatal(err)
+	}
+	first.Name = "First updated"
+	if err := db.WithContext(firstCtx).Save(&first).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	second := testUser{Name: "Second"}
+	secondCtx := WithBatch(
+		WithCauser(context.Background(), 8, "App\\Models\\Admin"),
+		"batch-second",
+	)
+	if err := db.WithContext(secondCtx).Create(&second).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	subjectLogs, err := Query(db).ForSubject(&first).Oldest().Find()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(subjectLogs) != 2 {
+		t.Fatalf("expected 2 subject activities, got %d", len(subjectLogs))
+	}
+	if subjectLogs[0].Event == nil || *subjectLogs[0].Event != EventCreated {
+		t.Fatalf("unexpected oldest event: %v", subjectLogs[0].Event)
+	}
+
+	causerCount, err := Query(db).
+		CausedBy(7, "App\\Models\\Admin").
+		Count()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if causerCount != 2 {
+		t.Fatalf("expected 2 causer activities, got %d", causerCount)
+	}
+
+	latest, err := Query(db).
+		InLog("users").
+		InBatch("batch-first").
+		ForEvent(EventUpdated).
+		Latest().
+		First()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if latest.SubjectID == nil || numericMorphID(t, latest.SubjectID) != first.ID {
+		t.Fatalf("unexpected filtered activity: %#v", latest)
+	}
+
+	paged, err := Query(db).Latest().Offset(1).Limit(1).Find()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(paged) != 1 || paged[0].ID != subjectLogs[1].ID {
+		t.Fatalf("unexpected paged activities: %#v", paged)
 	}
 }
 
