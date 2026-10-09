@@ -76,3 +76,64 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
           fail_ci_if_error: false
           verbose: true
+
+  spatie-compat:
+    runs-on: ubuntu-latest
+
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: activitylog_spatie
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping --silent"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.3"
+          coverage: none
+
+      - name: Install Spatie 4.10.2
+        working-directory: compat/laravel
+        run: composer install --no-interaction --no-progress
+
+      - name: Create Spatie schema
+        working-directory: compat/laravel
+        run: vendor/bin/phpunit --filter test_schema_uses_spatie_migrations
+
+      - name: Go writes activities
+        run: go test -tags spatie -count=1 -run TestGoWritesSpatieRows
+        env:
+          MYSQL_DSN: root:root@tcp(127.0.0.1:3306)/activitylog_spatie?parseTime=true&charset=utf8mb4
+
+      - name: Laravel reads Go activities
+        working-directory: compat/laravel
+        run: vendor/bin/phpunit --filter test_laravel_reads_go_rows
+        env:
+          COMPAT_EXPECT_GO: "1"
+
+      - name: Laravel writes activities
+        working-directory: compat/laravel
+        run: vendor/bin/phpunit --filter test_laravel_writes_rows
+
+      - name: Go reads Laravel activities
+        run: go test -tags spatie -count=1 -run TestGoReadsSpatieRows
+        env:
+          MYSQL_DSN: root:root@tcp(127.0.0.1:3306)/activitylog_spatie?parseTime=true&charset=utf8mb4

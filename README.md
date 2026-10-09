@@ -319,12 +319,53 @@ Automatic activities are inserted through the same database transaction as the m
 error. Updates also fail with `activitylog.ErrMissingOldState` when the package
 cannot safely capture the value that existed before the update.
 
+## Soft delete and restore
+
+A model with `gorm.DeletedAt` is soft-deleted by GORM. That writes a `deleted` activity:
+
+- `properties.attributes` is the row after `deleted_at` is set.
+- `properties.old` is the row before the soft delete.
+
+Restoring with `Unscoped().Model(&row).Update("deleted_at", nil)` writes `restored`, with `attributes` after the restore and `old` while the row was deleted. `LogOnlyDirty` keeps `deleted_at` on those two events and drops unchanged fields. An empty `LogEvents` list includes `restored`. Omit `restored` from `LogEvents` to skip it.
+
+`Unscoped().Delete` and deleting a model without `DeletedAt` are hard deletes. They store only `properties.old`.
+
+Updating another column on a soft-deleted row through `Unscoped()` stays an `updated` activity.
+
+## Supported updates
+
+| Operation | Activity |
+| --- | --- |
+| `Create`, `Save` | Logged |
+| `Updates` on a struct whose primary key is set | Logged |
+| `Update` of one column on that same instance | Logged |
+| `Model(&T{}).Where(...).Update` or `Updates` | Not logged; the update still succeeds |
+| `Updates(map[string]any)` with more than one entry | Not logged; the update still succeeds |
+| `UpdateColumn` / `UpdateColumns` | Not logged; the update still succeeds |
+| `Table(...).Update` | Not logged; the update still succeeds |
+
+`ErrMissingOldState` is returned only when an instance update should have been audited and the previous row could not be captured. Composite primary keys are not supported.
+
+## Spatie compatibility
+
+The two-way suite in `compat/laravel` pins `spatie/laravel-activitylog` 4.10.2. It runs that package's migrations, then checks that Laravel can read rows written by this package and that this package can read rows written by Spatie. CI runs it against MySQL 8.4.
+
+| | This package | Spatie 4.10.2 |
+| --- | --- | --- |
+| Table and columns | `activity_log`, including `event` and `batch_uuid` | Same migrations |
+| `created` | `attributes` | `attributes` |
+| `updated` | `attributes` and `old` | `attributes` and `old` |
+| Soft `deleted` | `attributes` (after) and `old` (before) | `old` only, snapshot after delete |
+| `restored` | `attributes` (after) and `old` (before) | `attributes` only |
+| Hard `deleted` | `old` only | `old` only |
+| Subject type | Stable alias such as `articles` | PHP class name unless a morph map is set |
+
+Schema compatibility is not the same as identical JSON. Compare an existing Laravel migration before running `Migrate`.
+
 ## Current limitations
 
 - Automatic subjects require exactly one non-zero numeric, UUID, or ULID primary key.
 - Composite primary keys are not currently supported.
-- Instance-based operations such as `Create`, `Save`, `Update`, and `Delete` are supported. Bulk updates/deletes and operations whose model is a map do not produce automatic per-record activities.
-- `Activity` targets the modern Spatie columns, including `event` and `batch_uuid`; compare its schema with the exact Spatie migration version used by an existing application before running `Migrate`.
 
 ## Running Tests
 
@@ -341,7 +382,14 @@ go test -race ./...
 ```
 
 They are skipped for normal local tests without those environment variables.
-CI runs both databases and enforces 100% statement coverage.
+CI runs both databases and enforces 100% statement coverage. A separate job runs the Spatie 4.10.2 round trip:
+
+```bash
+cd compat/laravel && composer install
+# after the Spatie migrations have created activity_log and spatie_articles
+MYSQL_DSN='root:root@tcp(127.0.0.1:3306)/activitylog_spatie?parseTime=true' \
+  go test -tags spatie -count=1 -run 'TestGoWritesSpatieRows|TestGoReadsSpatieRows'
+```
 
 ## License
 

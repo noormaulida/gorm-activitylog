@@ -7,8 +7,10 @@ const (
 	EventCreated = "created"
 	// EventUpdated is emitted after a model is updated.
 	EventUpdated = "updated"
-	// EventDeleted is emitted after a model is deleted.
+	// EventDeleted is emitted after a model is soft-deleted or hard-deleted.
 	EventDeleted = "deleted"
+	// EventRestored is emitted when a soft-deleted model is restored.
+	EventRestored = "restored"
 )
 
 func shouldLogEvent(options LogOptions, event string) bool {

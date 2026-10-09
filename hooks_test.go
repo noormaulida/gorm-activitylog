@@ -2,6 +2,7 @@ package activitylog
 
 import (
 	"errors"
+	"reflect"
 	"testing"
 
 	"gorm.io/gorm"
@@ -98,8 +99,24 @@ func TestBeforeUpdateHookGuardBranches(t *testing.T) {
 
 	zeroTX := hookTX(t, db, &testUser{})
 	beforeUpdateHook(zeroTX)
-	if _, exists := zeroTX.InstanceGet(oldDataKey); exists {
-		t.Fatal("zero primary key must not capture old state")
+	if _, exists := zeroTX.InstanceGet(oldDataKey); exists || zeroTX.Error != nil {
+		t.Fatalf("zero primary key must not capture old state: err=%v", zeroTX.Error)
+	}
+
+	skipped := hookTX(t, db, &testUser{ID: 1})
+	skipped.Statement.Dest = []string{"bulk"}
+	beforeUpdateHook(skipped)
+	if skipped.Error != nil {
+		t.Fatalf("non-struct dest must not fail, err=%v", skipped.Error)
+	}
+
+	columnTX := hookTX(t, db, &testUser{ID: 1})
+	columnTX.Statement.SkipHooks = true
+	beforeUpdateHook(columnTX)
+	afterUpdateHook(columnTX)
+	columnTX.Statement.SkipHooks = false
+	if _, exists := columnTX.InstanceGet(oldDataKey); exists || columnTX.Error != nil {
+		t.Fatalf("UpdateColumn must not audit: err=%v", columnTX.Error)
 	}
 
 	missing := &testUser{ID: 999999, Name: "missing"}
@@ -179,4 +196,39 @@ func TestDeleteHookGuardBranches(t *testing.T) {
 	disabledModel := &disabledUpdateModel{ID: 1}
 	disabledAfter := hookTXWithInstance(t, db, disabledModel, deleteDataKey, ActivityProperties{})
 	afterDeleteHook(disabledAfter)
+
+	missingSoft := hookTXWithInstance(t, db, &testUser{ID: 999999}, deleteDataKey, ActivityProperties{
+		Old: map[string]any{"name": "missing"},
+	})
+	afterDeleteHook(missingSoft)
+	if !errors.Is(missingSoft.Error, gorm.ErrRecordNotFound) {
+		t.Fatalf("expected missing soft-delete snapshot, got %v", missingSoft.Error)
+	}
+
+	if _, err := reloadModel(hookTX(t, db, &testUser{}), reflect.ValueOf(testUser{})); !errors.Is(err, ErrMissingOldState) {
+		t.Fatalf("expected missing primary key, got %v", err)
+	}
+	if deletedAtSet(hookTX(t, db, &testUser{}), reflect.ValueOf(1)) {
+		t.Fatal("non-struct value must not report deleted_at")
+	}
+	if deletedAtSet(hookTX(t, db, &hardRecord{}), reflect.ValueOf(hardRecord{})) {
+		t.Fatal("model without DeletedAt must not report a soft delete")
+	}
+	nilDest := hookTX(t, db, &testUser{ID: 1})
+	nilDest.Statement.Dest = nil
+	if instanceDestAuditable(nilDest) {
+		t.Fatal("nil dest must not be an instance update")
+	}
+	scalarDelete := hookTXWithInstance(t, db, &testUser{ID: 1}, deleteDataKey, ActivityProperties{Old: map[string]any{"name": "x"}})
+	scalar := scalarLoggable(1)
+	scalarDelete.Statement.Model = &scalar
+	scalarDelete.Statement.Dest = &scalar
+	afterDeleteHook(scalarDelete)
+	if scalarDelete.Error != nil {
+		t.Fatalf("non-struct soft delete must not fail: %v", scalarDelete.Error)
+	}
+	props, ok := loggedChange(LogOptions{}, EventUpdated, map[string]any{"title": "a"}, map[string]any{"title": "b"}, "")
+	if !ok || props.Attributes["title"] != "b" || props.Old["title"] != "a" {
+		t.Fatalf("unexpected full change: %#v ok=%v", props, ok)
+	}
 }

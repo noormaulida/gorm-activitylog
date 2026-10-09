@@ -1,0 +1,28 @@
+{
+    "name": "gorm-activitylog/spatie-compat",
+    "description": "Two-way activity_log checks against spatie/laravel-activitylog 4.10.2",
+    "type": "project",
+    "require": {
+        "php": "^8.2",
+        "orchestra/testbench": "^9.6",
+        "spatie/laravel-activitylog": "4.10.2"
+    },
+    "autoload": {
+        "psr-4": {
+            "Compat\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Compat\\Tests\\": "tests/"
+        }
+    },
+    "config": {
+        "sort-packages": true,
+        "policy": {
+            "advisories": {
+                "block": false
+            }
+        }
+    }
+}
