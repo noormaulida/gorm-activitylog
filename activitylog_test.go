@@ -3,7 +3,9 @@ package activitylog
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -53,6 +55,21 @@ func (*eventArticle) ActivityLogOptions() LogOptions {
 			return event
 		},
 	}
+}
+
+type failingJSON string
+
+func (failingJSON) MarshalJSON() ([]byte, error) {
+	return nil, errors.New("intentional marshal failure")
+}
+
+type marshalFailureModel struct {
+	ID    uint64
+	Value failingJSON
+}
+
+func (*marshalFailureModel) ActivityLogOptions() LogOptions {
+	return LogOptions{}
 }
 
 func (*testUser) ActivityLogOptions() LogOptions {
@@ -543,6 +560,75 @@ func TestPruneUsesRetentionDuration(t *testing.T) {
 	}
 	if _, err := Prune(db, 0); err == nil {
 		t.Fatal("expected non-positive retention to fail")
+	}
+}
+
+func TestInvalidUUIDCauserRollsBackModel(t *testing.T) {
+	db := openTestDB(t)
+	ctx := WithCauser(context.Background(), "not-a-valid-uuid", "User")
+
+	err := db.WithContext(ctx).Create(&testUser{Name: "Must roll back"}).Error
+	if err == nil {
+		t.Fatal("expected invalid UUID to fail")
+	}
+
+	var users int64
+	if err := db.Unscoped().Model(&testUser{}).Count(&users).Error; err != nil {
+		t.Fatal(err)
+	}
+	if users != 0 {
+		t.Fatalf("expected invalid causer to roll back model, found %d users", users)
+	}
+	if count := len(activities(t, db)); count != 0 {
+		t.Fatalf("expected no activities, got %d", count)
+	}
+}
+
+func TestMarshalFailureRollsBackModel(t *testing.T) {
+	db := openTestDB(t)
+	if err := db.AutoMigrate(&marshalFailureModel{}); err != nil {
+		t.Fatal(err)
+	}
+
+	err := db.Create(&marshalFailureModel{Value: "cannot encode"}).Error
+	if err == nil || !strings.Contains(err.Error(), "intentional marshal failure") {
+		t.Fatalf("expected marshal failure, got %v", err)
+	}
+
+	var models int64
+	if err := db.Model(&marshalFailureModel{}).Count(&models).Error; err != nil {
+		t.Fatal(err)
+	}
+	if models != 0 {
+		t.Fatalf("expected marshal failure to roll back model, found %d rows", models)
+	}
+}
+
+func TestMissingOldStateRollsBackUpdate(t *testing.T) {
+	db := openTestDB(t)
+	user := testUser{Name: "Before"}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Callback().Update().Remove("activitylog:before_update"); err != nil {
+		t.Fatal(err)
+	}
+
+	user.Name = "After"
+	err := db.Save(&user).Error
+	if !errors.Is(err, ErrMissingOldState) {
+		t.Fatalf("expected ErrMissingOldState, got %v", err)
+	}
+
+	var persisted testUser
+	if err := db.First(&persisted, user.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if persisted.Name != "Before" {
+		t.Fatalf("expected update rollback, got name %q", persisted.Name)
+	}
+	if count := len(activities(t, db)); count != 1 {
+		t.Fatalf("expected only create activity, got %d", count)
 	}
 }
 

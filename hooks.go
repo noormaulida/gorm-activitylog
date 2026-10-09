@@ -1,10 +1,14 @@
 package activitylog
 
 import (
+	"errors"
 	"reflect"
 
 	"gorm.io/gorm"
 )
+
+// ErrMissingOldState indicates that an update could not be audited safely.
+var ErrMissingOldState = errors.New("activitylog: old model state was not captured")
 
 const (
 	oldDataKey    = "activitylog:old_data"
@@ -145,6 +149,7 @@ func afterUpdateHook(tx *gorm.DB) {
 
 	oldData, exists := tx.InstanceGet(oldDataKey)
 	if !exists {
+		tx.AddError(ErrMissingOldState)
 		return
 	}
 

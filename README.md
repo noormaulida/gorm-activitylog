@@ -189,7 +189,7 @@ Use `PerformedOn(&article)` to attach a model subject. It reads the primary key 
 
 ### UUID and ULID morph IDs
 
-Model and causer IDs may be numeric values or strings:
+Model and causer IDs may be numeric values, canonical UUIDs, or ULIDs:
 
 ```go
 activitylog.New(db).
@@ -313,7 +313,8 @@ requests.
 ## Transaction behavior
 
 Automatic activities are inserted through the same database transaction as the model operation. Rolling back the model change also rolls back its activity. Failure to serialize or insert an activity is returned as a GORM operation
-error.
+error. Updates also fail with `activitylog.ErrMissingOldState` when the package
+cannot safely capture the value that existed before the update.
 
 ## Current limitations
 

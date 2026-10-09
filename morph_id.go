@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"reflect"
 	"strconv"
+	"strings"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/schema"
@@ -66,7 +67,16 @@ func normalizeMorphID(value any) (any, error) {
 		if identifier == "" {
 			return nil, errors.New("activitylog: morph ID cannot be empty")
 		}
-		return identifier, nil
+		if numeric, err := strconv.ParseUint(identifier, 10, 64); err == nil {
+			if numeric == 0 {
+				return nil, errors.New("activitylog: morph ID cannot be zero")
+			}
+			return numeric, nil
+		}
+		if validUUID(identifier) || validULID(identifier) {
+			return identifier, nil
+		}
+		return nil, errors.New("activitylog: string morph ID must be numeric, UUID, or ULID")
 	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
 		identifier := reflected.Uint()
 		if identifier == 0 {
@@ -132,16 +142,58 @@ func (id *MorphID) Scan(value any) error {
 }
 
 func (id *MorphID) scanString(value string) error {
-	if value == "" {
-		return errors.New("activitylog: scanned morph ID cannot be empty")
+	normalized, err := normalizeMorphID(value)
+	if err != nil {
+		return fmt.Errorf("activitylog: scan morph ID: %w", err)
+	}
+	id.raw = normalized
+	return nil
+}
+
+func validUUID(value string) bool {
+	if len(value) != 36 {
+		return false
 	}
 
-	if numeric, err := strconv.ParseUint(value, 10, 64); err == nil && numeric > 0 {
-		id.raw = numeric
-	} else {
-		id.raw = value
+	nonZero := false
+	for index, character := range value {
+		switch index {
+		case 8, 13, 18, 23:
+			if character != '-' {
+				return false
+			}
+			continue
+		}
+		if !strings.ContainsRune("0123456789abcdefABCDEF", character) {
+			return false
+		}
+		if character != '0' {
+			nonZero = true
+		}
 	}
-	return nil
+	return nonZero
+}
+
+func validULID(value string) bool {
+	if len(value) != 26 {
+		return false
+	}
+
+	value = strings.ToUpper(value)
+	nonZero := false
+	for index, character := range value {
+		if !strings.ContainsRune("0123456789ABCDEFGHJKMNPQRSTVWXYZ", character) {
+			return false
+		}
+		// The first ULID character is limited to 0-7 to fit 128 bits.
+		if index == 0 && character > '7' {
+			return false
+		}
+		if character != '0' {
+			nonZero = true
+		}
+	}
+	return nonZero
 }
 
 // String returns the identifier's database representation.
