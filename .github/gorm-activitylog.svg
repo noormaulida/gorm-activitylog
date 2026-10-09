@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="160" viewBox="0 0 760 160" role="img" aria-labelledby="title description">
+  <title id="title">gorm-activitylog</title>
+  <desc id="description">gorm-activitylog logo with a database and activity pulse</desc>
+  <defs>
+    <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#111827"/>
+      <stop offset="1" stop-color="#1f2937"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#00add8"/>
+      <stop offset="1" stop-color="#38bdf8"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="1" y="1" width="758" height="158" rx="28" fill="url(#background)" stroke="#374151" stroke-width="2"/>
+
+  <g transform="translate(34 26)">
+    <ellipse cx="54" cy="20" rx="43" ry="17" fill="url(#accent)"/>
+    <path d="M11 20v67c0 9 19 17 43 17s43-8 43-17V20" fill="#00add8" opacity=".82"/>
+    <path d="M11 52c0 9 19 17 43 17s43-8 43-17M11 84c0 9 19 17 43 17s43-8 43-17" fill="none" stroke="#dff7ff" stroke-width="4" opacity=".8"/>
+    <path d="M25 60h17l8-17 12 35 9-18h15" fill="none" stroke="#fff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+
+  <g font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif">
+    <text x="160" y="78" fill="#f9fafb" font-size="46" font-weight="700" letter-spacing="-1">gorm-activitylog</text>
+    <text x="162" y="111" fill="#9ca3af" font-size="18" font-weight="500">Spatie-compatible activity logging for GORM</text>
+  </g>
+</svg>

@@ -2,7 +2,7 @@ package activitylog
 
 import (
 	"encoding/json"
-	"fmt"
+	"reflect"
 
 	"gorm.io/datatypes"
 	"gorm.io/gorm"
@@ -13,45 +13,44 @@ func saveActivity(tx *gorm.DB, loggable Loggable, event string, logName string, 
 		logName = "default"
 	}
 
-	subjectType := fmt.Sprintf("%T", loggable) // e.g., "*models.Article"
-	
-	var subjectID uint
-	pks := extractPrimaryKeys(tx, reflect.ValueOf(loggable))
-	if len(pks) > 0 {
-		if id, ok := pks[0].(uint); ok {
-			subjectID = id
-		}
+	_, key, ok := primaryKey(tx, reflect.ValueOf(loggable))
+	if !ok {
+		return
+	}
+	subjectID, ok := numericID(key)
+	if !ok {
+		return
 	}
 
-	var causerID *uint
+	options := loggable.ActivityLogOptions()
+	subjectTypeValue := subjectType(loggable, options, tx.Statement.Schema)
+	var causerID *uint64
 	var causerType *string
 
-	if ctxID := tx.Statement.Context.Value(CauserIDKey); ctxID != nil {
-		if id, ok := ctxID.(uint); ok {
-			causerID = &id
-		}
-	}
-	
-	if ctxType := tx.Statement.Context.Value(CauserTypeKey); ctxType != nil {
-		if ct, ok := ctxType.(string); ok {
-			causerType = &ct
-		}
+	if id, modelType, exists := causerFromContext(tx.Statement.Context); exists {
+		causerID = &id
+		causerType = &modelType
 	}
 
 	propsJSON, err := json.Marshal(props)
 	if err != nil {
-		propsJSON = []byte("{}")
+		tx.AddError(err)
+		return
 	}
 
 	activity := Activity{
-		LogName:     logName,
+		LogName:     &logName,
 		Description: event,
-		SubjectID:   subjectID,
-		SubjectType: subjectType,
+		Event:       &event,
+		SubjectID:   &subjectID,
+		SubjectType: &subjectTypeValue,
 		CauserID:    causerID,
 		CauserType:  causerType,
 		Properties:  datatypes.JSON(propsJSON),
 	}
 
-	tx.Session(&gorm.Session{NewDB: true}).Create(&activity)
+	result := tx.Session(&gorm.Session{NewDB: true, SkipHooks: true}).Create(&activity)
+	if result.Error != nil {
+		tx.AddError(result.Error)
+	}
 }
