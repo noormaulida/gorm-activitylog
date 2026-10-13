@@ -1,5 +1,5 @@
 <p align="center">
-  <img src=".github/gorm-activitylog-new.png" alt="gorm-activitylog" width="400" />
+  <img src=".github/gorm-activity-log-new.png" alt="gorm-activitylog" width="400" />
 </p>
 
 <p align="center">
